@@ -1,5 +1,18 @@
 # Changelog
 
+## [v1.0.0 / phase-4] — Ticket-04 "Bình minh: phát hành v1.0.0", Contract v1.3
+### Thêm
+- Benchmark `node scripts/bench.js --seed 42 --duration 30 --out bench.json` (cảnh chuẩn 200 Bóng Mực, 100 đom đóm, camera bay vòng).
+- Soak test `node --expose-gc --jitless src/soak.js --seed 7 --nights 10 --out soak.json`.
+- Bảng xếp hạng top 10 lưu trên đĩa (`data/leaderboard.json`), có màn hình riêng; lệnh `node server.js --export-leaderboard out.json`.
+- Dễ tiếp cận: đổi phím (phát hiện trùng phím, khôi phục mặc định), phụ đề và cảnh báo bằng hình, giảm chuyển động, chữ ≥ 18 px, chữ lớn ×1.25.
+- Bản phát hành `dao-den-long-v1.0.0.zip` (chạy bằng `node server.js`, không cần `npm install`).
+### Thay đổi
+- `contract_version` "1.2" → "1.3"; thêm `bench_cmd`, `soak_cmd`. `run_cmd` đổi từ `npm start` thành `node server.js` (để nhận tham số `--export-leaderboard`).
+- Three.js cài qua npm (`three@0.160.0`) thay vì tải từ CDN: chơi không cần mạng.
+- Phím tạm dừng mặc định là `P` (Esc luôn tạm dừng được); phím của mọi hành động có thể đổi.
+- `puppeteer` là phụ thuộc tùy chọn và không tải trình duyệt khi `npm install` (`.puppeteerrc.cjs`), vì tải lỗi sẽ làm hỏng cả bước cài đặt.
+
 ## [phase-3] — Ticket-03 "Đèn cạn dầu", Contract v1.2
 ### Breaking changes
 - `contract_version` "1.1" → "1.2". Tuning thêm `fuel_max`, `fuel_decay_per_s`, `fuel_per_mote`, `relight_cost`, `win_ratio`, `drain_per_s`, `low_fuel_threshold`, `capacity_max`.

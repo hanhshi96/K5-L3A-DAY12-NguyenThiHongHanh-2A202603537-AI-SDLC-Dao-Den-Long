@@ -16,7 +16,9 @@
     "bench": "node scripts/bench.js --seed 42 --duration 30 --out bench.json"
   },
   "dependencies": {
-    "puppeteer": "^24.43.1",
     "three": "^0.160.0"
+  },
+  "optionalDependencies": {
+    "puppeteer": "^24.43.1"
   }
 }
