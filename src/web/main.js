@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createGame, step, TUNING, TICK_RATE, NIGHTS, capacityOf, makeRng, windAt } from '../sim/sim.js';
 import { validName, isoWithOffset, addEntry, sortEntries } from '../leaderboard.js';
 import { buildDecor } from './decor.js';
+import { makeMay } from './may.js';
 
 const T = TUNING;
 const $ = (id) => document.getElementById(id);
@@ -102,18 +103,8 @@ function buildWorld(n) {
 }
 
 // ---------- entity meshes ----------
-function makePlayer() {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 1.1, 12), mat(PALETTE.shirt)); body.position.y = 0.55;
-  const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.08, 8, 16), mat(PALETTE.scarf)); scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.12;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), mat(0xf2d0a9)); head.position.y = 1.4;
-  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.45, 24), mat(PALETTE.sand)); hat.position.y = 1.8;
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(PALETTE.lanternLit, PALETTE.lanternLit, 2)); lamp.position.set(0.7, 1.25, 0);
-  const light = new THREE.PointLight(0xffa040, 2, 10, 1.5); light.position.copy(lamp.position);
-  g.add(body, scarf, head, hat, lamp, light);
-  g.userData = { lamp, light };
-  return g;
-}
+// Mây is built in may.js (original chibi design, Phase 4 creative).
+const makePlayer = () => makeMay(PALETTE);
 function makeLantern() {
   const g = new THREE.Group();
   const base = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 0.5, 8), mat(0x8c8494)); base.position.y = 0.25;
@@ -452,6 +443,7 @@ function sync(t) {
   player.rotation.y = Math.atan2(p.facing[0], p.facing[1]);
   player.visible = !(p.invuln > 0 && Math.floor(t * 12) % 2 === 0) && p.fallWait === 0;
   player.userData.light.intensity = 1 + p.carried * 0.25;
+  player.userData.animate(t, p.pos, settings.reducedMotion);
   syncList('mote', game.motes, makeMote, (m, e) => {
     const ph = parseInt(e.id.slice(1), 10);
     m.position.set(e.pos[0], e.pos[1] + 0.9 + Math.sin(t * 3 + ph) * 0.2, e.pos[2]);
