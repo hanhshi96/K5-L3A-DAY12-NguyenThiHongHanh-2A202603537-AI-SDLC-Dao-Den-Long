@@ -1,6 +1,7 @@
 // 3D client (Phase 2): renders the shared simulation and feeds it input. No gameplay rules here.
 import * as THREE from 'three';
 import { createGame, step, TUNING, TICK_RATE, NIGHTS, capacityOf, makeRng } from '../sim/sim.js';
+import { validName, isoWithOffset, addEntry, sortEntries } from '../leaderboard.js';
 
 const T = TUNING;
 const $ = (id) => document.getElementById(id);
@@ -185,6 +186,7 @@ const SFX = {
 
 // ---------- game flow: menu -> intro -> play -> result -> next night -> dawn ----------
 let ui = 'menu', game = null, nightNo = 1, totalScore = 0, yaw = 0, acc = 0;
+let runSeed = Date.now() & 0x7fffffff, nightsWon = 0, saved = false; // one run = nights 1..3
 const meshes = { lantern: new Map(), mote: new Map(), shade: new Map(), drifter: new Map(), charm: new Map() };
 const player = makePlayer();
 scene.add(player);
@@ -194,7 +196,7 @@ let prevInput = {}, lastCountdown = -1, wasGrounded = true;
 function startNight(n, opts = {}) {
   nightNo = n;
   for (const [k, m] of Object.entries(meshes)) { for (const o of m.values()) scene.remove(o); m.clear(); }
-  game = createGame({ seed: opts.seed ?? (Date.now() & 0x7fffffff), night: n, scenario: opts.scenario || null, bench: !!opts.bench });
+  game = createGame({ seed: opts.seed ?? (runSeed + n - 1), night: n, scenario: opts.scenario || null, bench: !!opts.bench });
   buildWorld(n);
   for (const l of game.lanterns) { const m = makeLantern(); m.position.set(...l.pos); scene.add(m); meshes.lantern.set(l.id, m); }
   for (const c of game.charms) { const m = makeCharm(); scene.add(m); meshes.charm.set(c.id, m); }
@@ -209,11 +211,11 @@ function play() { initAudio(); hideOverlay(); ui = 'play'; startMusic(nightNo); 
 function onGameOver({ result }) {
   stopMusic();
   if (result === 'won') {
-    totalScore += game.score;
+    totalScore += game.score; nightsWon++;
     [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => tone(f, 0.6, 'triangle'), i * 120));
     if (nightNo === 3) {
       ui = 'dawn';
-      showOverlay(`<h1>Bình Minh</h1><p>Ba hòn đảo đã sáng trở lại. Cảm ơn con, Mây.</p><p>Tổng điểm: <b>${totalScore}</b></p><p><kbd>Enter</kbd> về menu</p>`);
+      showOverlay(`<h1>Bình Minh</h1><p>Ba hòn đảo đã sáng trở lại. Cảm ơn con, Mây.</p><p>Tổng điểm: <b>${totalScore}</b></p>${saveForm()}<p><kbd>Enter</kbd> về menu</p>`);
       document.body.style.background = '#f7c56b';
     } else {
       ui = 'result';
@@ -222,7 +224,7 @@ function onGameOver({ result }) {
   } else {
     [392, 330, 262].forEach((f, i) => setTimeout(() => tone(f, 0.5, 'sine'), i * 180));
     ui = 'lost';
-    showOverlay(`<h1>Thua rồi</h1><p>${game.player.flames <= 0 ? 'Mây đã hết lửa…' : `Bình minh tới nhưng chưa đủ ${need(game.lanterns.length)} đèn sáng…`}</p><p><kbd>R</kbd> / <kbd>Enter</kbd> chơi lại Đêm ${nightNo}</p>`);
+    showOverlay(`<h1>Thua rồi</h1><p>${game.player.flames <= 0 ? 'Mây đã hết lửa…' : `Bình minh tới nhưng chưa đủ ${need(game.lanterns.length)} đèn sáng…`}</p><p>Tổng điểm (các Đêm đã thắng): <b>${totalScore}</b></p>${saveForm()}<p><kbd>R</kbd> / <kbd>Enter</kbd> chơi lại Đêm ${nightNo}</p>`);
   }
 }
 function showMenu() {
@@ -230,7 +232,7 @@ function showMenu() {
   showOverlay(`<h1>Đảo Đèn Lồng</h1><p>Giúp Mây giữ đèn lồng của ba hòn đảo sáng tới bình minh.</p>
     <p><kbd>W A S D</kbd> đi · <kbd>Space</kbd> nhảy · <kbd>Shift</kbd> lướt · <kbd>E</kbd> nạp đèn · <kbd>F</kbd> tỏa sáng<br>
     kéo chuột / <kbd>Q</kbd> <kbd>C</kbd> xoay camera · <kbd>Esc</kbd>/<kbd>P</kbd> tạm dừng</p>
-    <p><button data-act="start">Bắt đầu (Enter)</button> <button data-act="settings">Cài đặt</button></p>`);
+    <p><button data-act="start">Bắt đầu (Enter)</button> <button data-act="board">Bảng xếp hạng</button> <button data-act="settings">Cài đặt</button></p>`);
 }
 function showPause() {
   ui = 'pause';
@@ -254,7 +256,9 @@ function hideOverlay() { $('overlay').classList.add('hidden'); }
 $('overlay').addEventListener('click', (e) => {
   const act = e.target.dataset && e.target.dataset.act;
   if (!act) return;
-  if (act === 'start') { initAudio(); totalScore = 0; startNight(1); }
+  if (act === 'start') newRun();
+  if (act === 'board') showBoard();
+  if (act === 'save') saveScore();
   if (act === 'settings') showSettings();
   if (act === 'resume') play();
   if (act === 'restart') { startNight(nightNo); }
@@ -262,14 +266,54 @@ $('overlay').addEventListener('click', (e) => {
   if (act === 'back') (settingsBack === 'pause' ? showPause : showMenu)();
 });
 
+// ---------- leaderboard (Ticket-04 §3): stored on disk by server.js (data/leaderboard.json) ----------
+function newRun() { initAudio(); totalScore = 0; nightsWon = 0; saved = false; runSeed = Date.now() & 0x7fffffff; startNight(1); }
+function saveForm() {
+  return saved ? '<p>Đã lưu điểm.</p>' : `<p><input id="lbName" maxlength="12" placeholder="Tên (3–12 ký tự)" autocomplete="off">
+    <button data-act="save">Lưu điểm</button></p><p id="lbMsg" class="small"></p>`;
+}
+async function saveScore() {
+  const input = $('lbName');
+  if (!input || saved) return;
+  const name = input.value.trim();
+  if (!validName(name)) { $('lbMsg').textContent = '⚠ Tên cần 3–12 ký tự: chữ (có dấu cũng được), số hoặc _'; return; }
+  const entry = { name, score: totalScore, nights_won: nightsWon, achieved_at: isoWithOffset(), seed: runSeed };
+  let rank = 0;
+  try {
+    const r = await fetch('/api/leaderboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(entry) });
+    const j = await r.json();
+    if (!r.ok) { $('lbMsg').textContent = '⚠ ' + (j.errors || []).join('; '); return; }
+    rank = j.rank;
+  } catch { // server unreachable (e.g. opened as a static file): keep a browser-local copy
+    let list = []; try { list = JSON.parse(localStorage.getItem('ddl-leaderboard') || '[]'); } catch { /* ignore */ }
+    const res = addEntry(list, entry); rank = res.rank;
+    try { localStorage.setItem('ddl-leaderboard', JSON.stringify(res.entries)); } catch { /* ignore */ }
+  }
+  saved = true;
+  $('lbMsg').textContent = rank ? `Đã lưu! Hạng ${rank} trong top 10.` : 'Đã lưu, nhưng chưa vào top 10.';
+  input.disabled = true;
+}
+let boardBack = 'menu';
+async function showBoard() {
+  boardBack = ui; ui = 'board';
+  let entries = [];
+  try { entries = (await (await fetch('/api/leaderboard')).json()).entries; } catch {
+    try { entries = sortEntries(JSON.parse(localStorage.getItem('ddl-leaderboard') || '[]')); } catch { /* ignore */ }
+  }
+  const rows = entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.name.replace(/[<>&]/g, '')}</td><td>${e.score}</td><td>${e.nights_won}/3</td><td>${e.achieved_at.slice(0, 16).replace('T', ' ')}</td></tr>`).join('');
+  showOverlay(`<h1>Bảng xếp hạng</h1>${entries.length ? `<table class="board"><tr><th>#</th><th>Tên</th><th>Điểm</th><th>Đêm thắng</th><th>Thời điểm</th></tr>${rows}</table>` : '<p>Chưa có ai. Hãy là người đầu tiên!</p>'}
+    <p><button data-act="menu">Về menu</button></p>`);
+}
+
 // ---------- input ----------
 const keys = new Set();
 addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT') { if (e.code === 'Enter') saveScore(); return; } // typing a name
   keys.add(e.code);
   if (e.code === 'Space') e.preventDefault();
   if (e.code === 'Escape' || e.code === 'KeyP') { if (ui === 'play') showPause(); else if (ui === 'pause') play(); }
   if (e.code === 'Enter') {
-    if (ui === 'menu') { initAudio(); totalScore = 0; startNight(1); }
+    if (ui === 'menu') newRun();
     else if (ui === 'intro') play();
     else if (ui === 'result') startNight(nightNo + 1);
     else if (ui === 'lost') startNight(nightNo);
@@ -496,5 +540,6 @@ if (qs.has('bench')) startBench(parseInt(qs.get('seed') || '42', 10), parseFloat
 else {
   startNight(Math.min(3, Math.max(1, parseInt(qs.get('night') || '1', 10))));
   if (qs.has('autostart')) play(); else showMenu();
+  if (qs.has('board')) showBoard(); // ?board opens the leaderboard (used for screenshots / proof)
 }
 requestAnimationFrame(frame);
