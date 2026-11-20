@@ -12,6 +12,11 @@
     "start": "node server.js",
     "headless": "node src/headless.js",
     "test": "node --test tests/",
-    "soak": "node --expose-gc --jitless src/soak.js --seed 7 --nights 10 --out soak.json"
+    "soak": "node --expose-gc --jitless src/soak.js --seed 7 --nights 10 --out soak.json",
+    "bench": "node scripts/bench.js --seed 42 --duration 30 --out bench.json"
+  },
+  "dependencies": {
+    "puppeteer": "^24.43.1",
+    "three": "^0.160.0"
   }
 }

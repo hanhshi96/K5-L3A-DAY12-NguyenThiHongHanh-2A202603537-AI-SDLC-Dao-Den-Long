@@ -1,6 +1,6 @@
 // 3D client (Phase 2): renders the shared simulation and feeds it input. No gameplay rules here.
 import * as THREE from 'three';
-import { createGame, step, TUNING, TICK_RATE, NIGHTS, capacityOf } from '../sim/sim.js';
+import { createGame, step, TUNING, TICK_RATE, NIGHTS, capacityOf, makeRng } from '../sim/sim.js';
 
 const T = TUNING;
 const $ = (id) => document.getElementById(id);
@@ -191,10 +191,10 @@ scene.add(player);
 const fx = [];
 let prevInput = {}, lastCountdown = -1, wasGrounded = true;
 
-function startNight(n) {
+function startNight(n, opts = {}) {
   nightNo = n;
   for (const [k, m] of Object.entries(meshes)) { for (const o of m.values()) scene.remove(o); m.clear(); }
-  game = createGame({ seed: Date.now() & 0x7fffffff, night: n });
+  game = createGame({ seed: opts.seed ?? (Date.now() & 0x7fffffff), night: n, scenario: opts.scenario || null, bench: !!opts.bench });
   buildWorld(n);
   for (const l of game.lanterns) { const m = makeLantern(); m.position.set(...l.pos); scene.add(m); meshes.lantern.set(l.id, m); }
   for (const c of game.charms) { const m = makeCharm(); scene.add(m); meshes.charm.set(c.id, m); }
@@ -392,17 +392,67 @@ function hud(t) {
   if (secs <= 10 && secs !== lastCountdown && ui === 'play') { lastCountdown = secs; tone(secs === 0 ? 220 : 660, 0.12, 'square', 0.06); }
 }
 
+// ---------- benchmark scene (Ticket-04 §1) ----------
+// Night 1, exactly 200 wandering shades + 100 motes spread over the island (seed), L1–L3 lit with fuel 100.
+// Spawns, damage, pickup, fuel and end conditions are off in the sim (bench flag). No player input.
+// Camera orbits (0,0,0): radius 30, Y = 15, start at angle 0 = (30,15,0), counter-clockwise seen from above, 15 s per lap.
+const BENCH_INPUT = { move: [0, 0], cam_yaw_deg: 0, jump: false, interact: false, pulse: false, dash: false, pause: false };
+const bench = { start: 0, warmup: 3000, duration: 30000, last: 0, dts: [], done: false };
+function startBench(seed, durationS) {
+  const rng = makeRng(seed);
+  const disc = (r, y) => { const a = rng() * Math.PI * 2, d = r * Math.sqrt(rng()); return [d * Math.cos(a), y, d * Math.sin(a)]; };
+  const scenario = {
+    random_motes: false, random_shades: false, random_drifters: false,
+    shades: Array.from({ length: 200 }, (_, i) => ({ id: `S${i + 1}`, pos: disc(38, 1), state: 'wander' })),
+    motes: Array.from({ length: 100 }, () => disc(38, 0)),
+    lanterns: ['L1', 'L2', 'L3'].map((id) => ({ id, lit: true, fuel: 100 })),
+  };
+  startNight(1, { seed, scenario, bench: true });
+  hideOverlay();
+  bench.duration = durationS * 1000;
+  ui = 'bench';
+  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  window.__benchInfo = { renderer: `three.js r${THREE.REVISION}, WebGL: ${ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)}`,
+    shades: game.shades.length, motes: game.motes.length };
+}
+function benchCamera(now) {
+  if (!bench.start) bench.start = now;
+  const a = ((now - bench.start) / 15000) * Math.PI * 2;
+  camera.position.set(30 * Math.cos(a), 15, 30 * Math.sin(a)); // same angle convention as the maps (spec G15)
+  camera.lookAt(0, 0, 0);
+}
+function benchRecord(now) {
+  if (bench.done) return;
+  if (!window.__benchFirstFrameEpoch) window.__benchFirstFrameEpoch = Date.now();
+  if (bench.last && now - bench.start > bench.warmup) bench.dts.push(now - bench.last);
+  bench.last = now;
+  if (now - bench.start >= bench.warmup + bench.duration) {
+    bench.done = true;
+    const dts = bench.dts, N = dts.length, sum = dts.reduce((a, b) => a + b, 0);
+    const sorted = [...dts].sort((a, b) => a - b);
+    const k = Math.max(1, Math.ceil(0.01 * N));
+    const worst = sorted.slice(N - k);
+    const r2 = (v) => Math.round(v * 100) / 100;
+    window.__benchResult = {
+      frames: N,
+      avg_fps: r2((1000 * N) / sum),
+      p1_low_fps: r2(1000 / (worst.reduce((a, b) => a + b, 0) / k)),
+      frame_ms_p95: r2(sorted[Math.min(N - 1, Math.ceil(0.95 * N) - 1)]),
+    };
+  }
+}
+
 // ---------- main loop ----------
 let last = performance.now(), frames = 0, fpsT = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (keys.has('KeyQ')) yaw += 1.8 * dt * settings.sensitivity;
   if (keys.has('KeyC')) yaw -= 1.8 * dt * settings.sensitivity;
-  if (ui === 'play') {
+  if (ui === 'play' || ui === 'bench') {
     acc += dt;
     while (acc >= 1 / TICK_RATE && ui === 'play') {
       acc -= 1 / TICK_RATE;
-      const inp = readInput();
+      const inp = ui === 'bench' ? BENCH_INPUT : readInput();
       if (inp.jump && !prevInput.jump && game.player.grounded) tone(440, 0.15, 'sine', 0.08);
       prevInput = inp;
       for (const ev of step(game, inp)) {
@@ -426,11 +476,15 @@ function frame(now) {
       r.scale.set(s, s, s); r.material.opacity = Math.max(0, r.userData.life / 0.4);
       if (r.userData.life <= 0) { scene.remove(r); fx.splice(i, 1); }
     }
-    const p = player.position, fxv = Math.sin(yaw), fzv = Math.cos(yaw);
-    camera.position.lerp(new THREE.Vector3(p.x - fxv * 9, p.y + 6, p.z - fzv * 9), 0.15);
-    camera.lookAt(p.x + fxv * 2, p.y + 1.2, p.z + fzv * 2);
+    if (ui === 'bench') benchCamera(now);
+    else {
+      const p = player.position, fxv = Math.sin(yaw), fzv = Math.cos(yaw);
+      camera.position.lerp(new THREE.Vector3(p.x - fxv * 9, p.y + 6, p.z - fzv * 9), 0.15);
+      camera.lookAt(p.x + fxv * 2, p.y + 1.2, p.z + fzv * 2);
+    }
   }
   renderer.render(scene, camera);
+  if (ui === 'bench') benchRecord(now);
   frames++; fpsT += dt;
   if (fpsT >= 1) { window.__fps = frames / fpsT; frames = 0; fpsT = 0; }
   requestAnimationFrame(frame);
@@ -438,6 +492,9 @@ function frame(now) {
 
 // ?night=N&autostart jumps straight into a night (used for screenshots / proof).
 const qs = new URLSearchParams(location.search);
-startNight(Math.min(3, Math.max(1, parseInt(qs.get('night') || '1', 10))));
-if (qs.has('autostart')) play(); else showMenu();
+if (qs.has('bench')) startBench(parseInt(qs.get('seed') || '42', 10), parseFloat(qs.get('duration') || '30'));
+else {
+  startNight(Math.min(3, Math.max(1, parseInt(qs.get('night') || '1', 10))));
+  if (qs.has('autostart')) play(); else showMenu();
+}
 requestAnimationFrame(frame);

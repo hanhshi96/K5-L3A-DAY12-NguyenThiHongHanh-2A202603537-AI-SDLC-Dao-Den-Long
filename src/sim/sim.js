@@ -89,12 +89,13 @@ export function makeRng(seed) {
 export class ScenarioError extends Error {}
 
 // ---------- construction ----------
-export function createGame({ seed = 0, night = 1, scenario = null } = {}) {
+// bench: Ticket-04 benchmark scene — no spawns/damage/pickup/fuel/end conditions; shades only wander.
+export function createGame({ seed = 0, night = 1, scenario = null, bench = false } = {}) {
   const N = NIGHTS[night];
   if (!N) throw new ScenarioError(`unknown night ${night}`);
   const sc = scenario || {};
   const g = {
-    seed, night, N, rng: makeRng(seed),
+    seed, night, N, rng: makeRng(seed), bench,
     tick: 0, simTick: 0, state: 'playing', paused: false, score: 0,
     timeLeftTicks: ticks(N.duration_s),
     player: {
@@ -252,7 +253,7 @@ export function step(g, input) {
   const st = g.simTick + 1; // sim tick produced by this step
 
   // 2. counters
-  g.timeLeftTicks--;
+  if (!g.bench) g.timeLeftTicks--;
   for (const k of ['pulseCd', 'dashCd', 'invuln', 'charm', 'dashTicks']) if (p[k] > 0) p[k]--;
   for (const s of g.shades) if (s.state === 'stunned' && s.stateTicks > 0) s.stateTicks--;
   for (const d of g.drifters) if (d.state === 'flee' && d.timer > 0) d.timer--;
@@ -263,7 +264,7 @@ export function step(g, input) {
   for (const c of g.charms) if (!c.available && --c.respawn <= 0) { c.available = true; c.respawn = 0; }
   // fuel: decay + drain (integer units), then lanterns at fuel <= 0 go out (Ticket-03)
   for (const l of g.lanterns) {
-    if (!l.lit) continue;
+    if (!l.lit || g.bench) continue;
     l.fuelU -= Math.round(T.fuel_decay_per_s * FU / TICK_RATE);
     for (const s of [...g.shades].sort(byId)) {
       if (s.state !== 'drain' || s.targetL !== l.id) continue;
@@ -339,7 +340,7 @@ export function step(g, input) {
   }
 
   // 4. pick up motes and charms
-  if (p.fallWait === 0) {
+  if (p.fallWait === 0 && !g.bench) {
     const near = (pos) => distXZ(p.pos, pos) <= T.pickup_radius && Math.abs(p.pos[1] - pos[1]) <= R.height_tol;
     for (let i = 0; i < g.motes.length && p.carried < capacityOf(p);) {
       if (near(g.motes[i].pos)) {
@@ -462,7 +463,7 @@ export function step(g, input) {
       else continue; // stays still while draining
     }
     if (s.state === 'chase' && dp > R.shade_lose) s.state = 'wander';
-    else if (s.state === 'wander' && dp <= R.shade_detect) { s.state = 'chase'; s.targetL = null; }
+    else if (s.state === 'wander' && dp <= R.shade_detect && !g.bench) { s.state = 'chase'; s.targetL = null; }
     let weak = null;
     if (s.state === 'wander') {
       const cur = g.lanterns.find((l) => l.id === s.targetL);
@@ -509,7 +510,7 @@ export function step(g, input) {
   }
 
   // 9. touch: drifters steal first, then shades hit (ascending id)
-  if (p.fallWait === 0) {
+  if (p.fallWait === 0 && !g.bench) {
     for (const d of [...g.drifters].sort(byId)) {
       if ((d.state === 'idle' || d.state === 'chase') && p.carried > 0 && distXZ(d.pos, p.pos) <= R.drifter_touch) {
         const amount = Math.min(R.drifter_steal_max, p.carried);
@@ -562,6 +563,7 @@ export function step(g, input) {
 
   // 11. win / lose
   g.simTick = st;
+  if (g.bench) return finish();
   // Ticket-03: no early win. At dawn: alive and lit >= ceil(0.6 * total) -> won.
   if (p.flames <= 0) end(g, 'lost', 'no_flames', emit);
   else if (g.timeLeftTicks <= 0) {
