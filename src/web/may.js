@@ -1,6 +1,6 @@
 // Mây, the player character (visual only, Phase 4 creative). An original chibi child built from simple shapes:
-// big head, white blouse, maroon jumpsuit with straps and puffy cuffs, red headscarf with small white flowers,
-// nón lá (conical hat) on top, and a paper lantern on a short stick. Nothing here is read by the simulation.
+// big head, white blouse, maroon jumpsuit with straps and puffy cuffs, red headscarf with small white flowers
+// (no hat, so the scarf shows), and a paper lantern on a short stick. Nothing here is read by the simulation.
 // Front of the model is +Z (main.js turns the group with rotation.y = atan2(facing.x, facing.z)).
 import * as THREE from 'three';
 
@@ -50,8 +50,11 @@ export function makeMay(PALETTE) {
   // --- head: big chibi head, hair fringe, eyes, rosy cheeks ---
   const head = new THREE.Group(); head.position.y = 1.42; body.add(head);
   head.add(mesh(new THREE.SphereGeometry(0.4, 20, 16), skin));
-  const fringe = mesh(new THREE.SphereGeometry(0.41, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.32), lam(HAIR), 0, 0.04, 0.02);
-  fringe.rotation.x = 0.35; head.add(fringe);
+  // Hair cap sits just under the scarf; only a band of fringe shows on the forehead below the scarf's edge.
+  const fringe = mesh(new THREE.SphereGeometry(0.405, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.36), lam(HAIR));
+  fringe.rotation.x = 0.25; head.add(fringe);
+  const backHair = mesh(new THREE.SphereGeometry(0.418, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.45), lam(HAIR));
+  backHair.rotation.x = -Math.PI / 2; head.add(backHair); // covers the back of the head below the scarf
   for (const side of [-1, 1]) {
     const eye = mesh(new THREE.SphereGeometry(0.055, 10, 8), lam(0x1a1210), side * 0.14, -0.02, 0.36); eye.scale.z = 0.5; head.add(eye);
     head.add(mesh(new THREE.SphereGeometry(0.018, 6, 4), lam(0xffffff, 0xffffff, 0.6), side * 0.14 + 0.02, 0.01, 0.39)); // eye shine
@@ -59,28 +62,21 @@ export function makeMay(PALETTE) {
   }
   const mouth = mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 10, Math.PI), lam(0x8a3b2e), 0, -0.14, 0.38); mouth.rotation.z = Math.PI; head.add(mouth);
 
-  // --- red headscarf with small white flowers, tied at the back, under the hat ---
-  const scarf = mesh(new THREE.SphereGeometry(0.43, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), scarfMat, 0, 0.02, -0.03);
-  scarf.rotation.x = -0.45; head.add(scarf); // pulled back so the face and fringe show
+  // --- red headscarf with small white flowers, tied at the back ---
+  const SCARF_TILT = -0.55; // pulled back: covers the top and back of the head, front edge sits on the forehead
+  const scarf = mesh(new THREE.SphereGeometry(0.43, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), scarfMat);
+  scarf.rotation.x = SCARF_TILT; head.add(scarf);
   for (let i = 0; i < 14; i++) { // little white flowers dotted over the scarf
     const a = (i / 14) * Math.PI * 2 + 0.3, up = 0.25 + (i % 3) * 0.12;
     const dir = new THREE.Vector3(Math.cos(a) * Math.sin(up * 2.2), Math.cos(up * 2.2), Math.sin(a) * Math.sin(up * 2.2));
-    dir.applyAxisAngle(new THREE.Vector3(1, 0, 0), -0.45);
+    dir.applyAxisAngle(new THREE.Vector3(1, 0, 0), SCARF_TILT);
     if (dir.z > 0.55) continue; // keep flowers off the face
-    const f = mesh(new THREE.SphereGeometry(0.03, 6, 4), flowerMat); f.position.copy(dir.multiplyScalar(0.44)).add(new THREE.Vector3(0, 0.02, -0.03));
+    const f = mesh(new THREE.SphereGeometry(0.03, 6, 4), flowerMat); f.position.copy(dir.multiplyScalar(0.435));
     head.add(f);
   }
   const knot = mesh(new THREE.SphereGeometry(0.08, 8, 6), scarfMat, 0, -0.2, -0.38); head.add(knot);
   for (const side of [-1, 1]) { // two scarf tails
     const tail = mesh(new THREE.ConeGeometry(0.07, 0.28, 6), scarfMat, side * 0.07, -0.34, -0.4); tail.rotation.set(0.3, 0, side * 0.35 + Math.PI); head.add(tail);
-  }
-
-  // --- nón lá: wide conical hat with woven rings and a chin strap ---
-  const hat = new THREE.Group(); hat.position.y = 0.36; head.add(hat);
-  hat.add(mesh(new THREE.ConeGeometry(0.85, 0.42, 32, 1, true), new THREE.MeshLambertMaterial({ color: PALETTE.sand, side: THREE.DoubleSide }), 0, 0.12, 0));
-  const ringMat = lam(0xa8915f);
-  for (const r of [0.28, 0.5, 0.72]) {
-    const ring = mesh(new THREE.TorusGeometry(r, 0.012, 4, 32), ringMat, 0, 0.33 - r * 0.49, 0); ring.rotation.x = Math.PI / 2; hat.add(ring);
   }
 
   // --- lantern on a stick, held in the right hand (the glowing part is `lamp`, used by main.js) ---

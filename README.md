@@ -36,6 +36,7 @@ Bản phát hành chạy ngay không cần `npm install`: tải `dao-den-long-v1
 | `F` | Tỏa sáng: tốn 3 đom đóm, làm choáng Bóng Mực trong 5 m |
 | `P` / `Esc` | Tạm dừng: Tiếp tục / Chơi lại Đêm / Cài đặt / Về menu |
 | Kéo chuột, `Q` / `C` | Xoay camera |
+| `V` | Bật/tắt góc nhìn từ trên xuống |
 
 **Dễ tiếp cận** (menu Cài đặt, được lưu lại): đổi phím cho mọi hành động (cảnh báo khi trùng phím, có nút khôi phục mặc định), bảng màu dễ phân biệt, giảm chuyển động (tắt rung camera và chớp sáng), chữ lớn ×1.25 (chữ tối thiểu 18 px), phụ đề cảnh báo (Bóng Mực xuất hiện kèm mũi tên ở mép màn hình, gió sắp thổi, 10 giây cuối, đèn sắp cạn dầu).
 
@@ -64,7 +65,7 @@ Tổng điểm là tổng điểm các Đêm đã thắng. Sau màn Bình Minh, 
 |---|---|---|
 | Toàn bộ test (65) | `npm test` | 65/65 pass, cũng chạy trên CI mỗi lần push |
 | Headless (Test Contract) | `node src/headless.js --seed 1 --night 1\|2\|3 --ticks 600 --out out.jsonl [--scenario s.json] [--inputs i.json]` | một Đêm đủ giờ chạy dưới 0.3 s |
-| Benchmark | `node scripts/bench.js --seed 42 --duration 30 --out bench.json` | [bench.json](bench.json): avg 291 fps, p1 low 108 fps, load 3.3 s |
+| Benchmark | `node scripts/bench.js --seed 42 --duration 30 --out bench.json` | [bench.json](bench.json): avg 322 fps, p1 low 167 fps, load 1.6 s |
 | Soak test | `node --expose-gc --jitless src/soak.js --seed 7 --nights 10 --out soak.json` | [soak.json](soak.json): 0 crash, bộ nhớ 13.6 → 15.4 MB (1.13×) |
 | Xuất bảng xếp hạng | `node server.js --export-leaderboard out.json` | `{"entries":[…]}` theo đúng thứ hạng |
 | Sinh lại bằng chứng | `scripts/proof.sh phase-4` | [docs/proof/](docs/proof/) |
@@ -75,11 +76,18 @@ Ghi chú:
 
 ## Sáng tạo của tôi
 
-Mọi phần sáng tạo **chỉ nằm ở lớp hiển thị** ([src/web/main.js](src/web/main.js)). Chúng không đụng tới simulation nên output headless không đổi. Trong benchmark chúng không hoạt động: cảnh bench không phát sự kiện, không có âm thanh và không hiện màn giới thiệu.
+Mọi phần sáng tạo **chỉ nằm ở lớp hiển thị** ([src/web/main.js](src/web/main.js), [src/web/decor.js](src/web/decor.js), [src/web/may.js](src/web/may.js)). Chúng không đụng tới simulation nên output headless không đổi. Trong benchmark chúng không hoạt động: cảnh bench không phát sự kiện, không có âm thanh và không hiện màn giới thiệu.
 1. **Đèn hửng dần** theo số đom đóm đã nạp, và có vòng đom đóm xoáy khi thắp.
-2. **Đèn trên nón lá** của Mây to và sáng hơn khi mang nhiều đom đóm.
+2. **Đèn lồng trên tay Mây** sáng hơn khi mang nhiều đom đóm.
 3. **Âm thanh tổng hợp bằng WebAudio**, không dùng file: mỗi đom đóm nhặt được phát một nốt cao dần; mỗi Đêm có nhạc nền theo một thang âm riêng; có hợp âm khi thắp đèn.
 4. **Lời giới thiệu của Ông Đăng** trước mỗi Đêm.
+5. **Nhân vật Mây kiểu chibi** do tôi tự thiết kế, dựng từ các khối 3D: áo trắng, yếm đỏ đô có dây đeo, khăn đỏ hoa trắng, cầm đèn lồng đỏ trên que; chân bước và đèn đung đưa khi đi.
+6. **Trang trí đảo**: trời sao, mặt trăng, sương hồng ở chân trời, cây (cây cau ở Đêm 2), đá, bụi cây, hoa, cầu tre, tháp chuông chi tiết, cột đèn to hơn.
+7. **Đom đóm dễ thấy hơn**: to hơn, có quầng sáng và cột sáng mảnh; một **mũi tên** trên đầu Mây chỉ tới đom đóm gần nhất. Số lượng đom đóm không đổi.
+8. **Tỏa sáng bùng ra từ đèn lồng**: quả cầu sáng, 12 tia sáng và vòng trên mặt đất, đều dừng đúng ở bán kính 5 m của luật chơi.
+9. **Góc nhìn từ trên xuống** (phím `V`, đổi được), W/A/S/D giữ nguyên nghĩa.
+
+Mọi hiệu ứng chuyển động ở trên đều tắt khi bật "Giảm chuyển động".
 
 Bằng chứng phần lõi vẫn đúng: 65 test headless pass ([docs/proof/phase-4/test-output.txt](docs/proof/phase-4/test-output.txt)), và các thay đổi sáng tạo chỉ nằm trong `src/web/`.
 
