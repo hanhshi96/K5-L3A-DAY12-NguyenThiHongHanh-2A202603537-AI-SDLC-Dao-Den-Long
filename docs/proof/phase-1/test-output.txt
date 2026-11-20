@@ -1,0 +1,30 @@
+✔ game.contract.json tuning mirrors the numbers the game uses (1.179833ms)
+✔ tick 0 snapshot = state after scenario, before input; player starts at origin (65.967042ms)
+✔ --ticks N runs exactly N steps; snapshots every n from 0; end line last (127.465958ms)
+✔ movement: speed, normalisation, camera yaw rotation (346.795792ms)
+✔ input frames: absent fields keep their value; input at tick k affects state k+1 (135.370625ms)
+✔ pickup within pickup_radius (<= r), event tick = k+1, score per_mote (66.927375ms)
+✔ carry_capacity limits pickup (70.453667ms)
+✔ deposit on interact rising edge; lantern lit after lantern_cost; setup gives no score (70.024541ms)
+✔ partial deposit, then out of range does nothing (132.6405ms)
+✔ lighting the last lantern wins with bonus (66.87125ms)
+✔ pulse: costs light, stuns & pushes shades within pulse_radius, scores per_stun, cooldown (67.784792ms)
+✔ pulse needs enough carried light (64.287583ms)
+✔ stun lasts pulse_stun_s (69.647125ms)
+✔ shade chases and hits: flames-1, drop ratio, invulnerability, lose on no_flames (68.318084ms)
+✔ shades never enter safe_radius of a lit lantern (67.762833ms)
+✔ dawn: time runs out -> lost/dawn (62.784625ms)
+✔ determinism: same seed/scenario/inputs -> identical output; random world spawns ids (232.818041ms)
+✔ random_shades spawns emit shade_spawned (72.599458ms)
+✔ scenario shades without id get unique ids; lanterns updated by id (65.503667ms)
+✔ malformed inputs/scenario -> exit code 2 with stderr (641.794042ms)
+✔ scenario light-L1: walk, pick 5 motes, deposit, light L1 (69.3385ms)
+✔ scenario pulse-shade: shade stunned before it reaches the player (64.198417ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2590.137042
