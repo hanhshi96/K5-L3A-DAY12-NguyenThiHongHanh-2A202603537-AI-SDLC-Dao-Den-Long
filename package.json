@@ -1,0 +1,14 @@
+{
+  "name": "dao-den-long",
+  "version": "0.1.0",
+  "description": "Đảo Đèn Lồng — Day 12 AI SDLC Lab",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "headless": "node src/headless.js",
+    "test": "node --test tests/"
+  }
+}
