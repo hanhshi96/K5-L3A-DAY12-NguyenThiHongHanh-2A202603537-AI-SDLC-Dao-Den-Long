@@ -538,5 +538,3 @@ export function snapshot(g) {
 }
 
 export { NIGHTS, angPoint };
-// Temporary alias for the web client until it is updated for 3 nights (Phase 2 step 5).
-export const WORLD = { island_radius: 40 };

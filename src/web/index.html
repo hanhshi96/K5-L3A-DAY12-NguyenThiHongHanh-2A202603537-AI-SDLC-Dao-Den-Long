@@ -5,24 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Đảo Đèn Lồng</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #120a1f; font-family: system-ui, sans-serif; color: #ffe9c4; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0E1430; font-family: system-ui, sans-serif; color: #F5F1E6; }
   canvas { display: block; }
-  #hud { position: fixed; top: 12px; left: 12px; font-size: 16px; line-height: 1.6; background: rgba(20,10,35,.6);
-         padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,190,110,.3); min-width: 210px; }
-  #hud b { color: #ffb347; }
-  #hint { position: fixed; bottom: 40px; width: 100%; text-align: center; font-size: 18px; text-shadow: 0 0 8px #000; }
-  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-             background: rgba(10,5,20,.75); text-align: center; }
-  #overlay .box { max-width: 520px; padding: 28px 32px; border-radius: 16px; background: rgba(40,20,60,.9);
-                  border: 1px solid rgba(255,190,110,.4); }
-  #overlay h1 { margin: 0 0 8px; color: #ffb347; }
-  #overlay kbd { background: #ffe9c4; color: #2a1640; border-radius: 4px; padding: 1px 6px; font-weight: 600; }
+  #hud > div { position: fixed; text-shadow: 0 0 6px #000; }
+  #hudFlames { top: 12px; left: 16px; font-size: 26px; }
+  #hudClock { top: 10px; left: 50%; transform: translateX(-50%); font-size: 30px; font-weight: 700; color: #F2C14E; }
+  #hudRight { top: 12px; right: 16px; text-align: right; font-size: 18px; line-height: 1.5; }
+  #hudRight b, #hudCd b { color: #F2C14E; }
+  #hudBar { bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }
+  #hudBar span { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #FFE58A; opacity: .45; }
+  #hudBar span.on { background: #FFF6C2; opacity: 1; box-shadow: 0 0 10px #FFE58A; }
+  #hudCd { bottom: 16px; right: 16px; text-align: right; font-size: 15px; line-height: 1.6; }
+  #hint { position: fixed; bottom: 60px; width: 100%; text-align: center; font-size: 20px; color: #FFE9B0; text-shadow: 0 0 8px #000; }
+  #arrow { position: fixed; display: none; font-size: 34px; color: #FFB347; text-shadow: 0 0 8px #000; pointer-events: none; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(14,20,48,.78); text-align: center; }
+  #overlay .box { max-width: 560px; padding: 28px 32px; border-radius: 16px; background: rgba(27,35,80,.95); border: 1px solid #F2C14E; }
+  #overlay h1 { margin: 0 0 8px; color: #FFB347; }
+  #overlay kbd { background: #F5F1E6; color: #0E1430; border-radius: 4px; padding: 1px 6px; font-weight: 600; }
+  #overlay button { font: inherit; padding: 8px 18px; border-radius: 8px; border: 1px solid #F2C14E; background: #2F5D50; color: #F5F1E6; cursor: pointer; min-width: 180px; }
+  #overlay button:hover { background: #6B4A2F; }
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
-<div id="hud"></div>
+<div id="hud">
+  <div id="hudFlames"></div><div id="hudClock"></div><div id="hudRight"></div>
+  <div id="hudBar"></div><div id="hudCd"></div>
+</div>
 <div id="hint"></div>
+<div id="arrow">➤</div>
 <div id="overlay"><div class="box" id="overlayBox"></div></div>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }

@@ -1,315 +1,414 @@
-// 3D client: renders the shared simulation (src/sim/sim.js) and feeds it keyboard input.
-// All gameplay rules live in the sim; this file is presentation only (visuals, audio, HUD).
+// 3D client (Phase 2): renders the shared simulation and feeds it input. No gameplay rules here.
 import * as THREE from 'three';
-import { createGame, step, TUNING, WORLD, TICK_RATE } from '../sim/sim.js';
+import { createGame, step, TUNING, TICK_RATE, NIGHTS } from '../sim/sim.js';
 
 const T = TUNING;
 const $ = (id) => document.getElementById(id);
 
-// ---------- renderer / scene ----------
+// Standard palette (Ticket-02 Part 3.8)
+export const PALETTE = {
+  sky: 0x0e1430, fog: 0x1b2350, grass: 0x2f5d50, sand: 0xc9b48a, wood: 0x6b4a2f, cloudSea: 0x12384a,
+  lanternLit: 0xffb347, lanternCore: 0xffe9b0, lanternOff: 0x5b5f6e, moteCore: 0xfff6c2, moteHalo: 0xffe58a,
+  shadeBody: 0x120a1a, shadeRim: 0x7a3cff, shadeStunned: 0x3a3450, shirt: 0xe8e2d0, scarf: 0xc8102e,
+  gold: 0xf2c14e, drifter: 0x8fa3b8, danger: '#FF5A5F', text: '#F5F1E6',
+};
+const INTRO = {
+  1: 'Ông Đăng: "Đảo Bến là nơi con thắp ngọn đèn đầu tiên. Đừng sợ bóng tối, Mây."',
+  2: 'Ông Đăng: "Hai đảo Cau nối nhau bằng cầu tre. Coi chừng Gió Lạc, chúng thích đom đóm lắm."',
+  3: 'Ông Đăng: "Đảo Chuông có ba tầng và gió mạnh. Thắp hết đèn, bình minh sẽ tới."',
+};
+
+// ---------- settings (persisted) ----------
+const settings = { volume: 0.6, sensitivity: 1 };
+try { Object.assign(settings, JSON.parse(localStorage.getItem('ddl-settings') || '{}')); } catch { /* private mode */ }
+const saveSettings = () => { try { localStorage.setItem('ddl-settings', JSON.stringify(settings)); } catch { /* ignore */ } };
+
+// ---------- renderer ----------
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
-const NIGHT = new THREE.Color(0x1a0d2e), WARM = new THREE.Color(0x4a3050);
-scene.background = NIGHT.clone();
-scene.fog = new THREE.FogExp2(0x1a0d2e, 0.035);
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 300);
-const ambient = new THREE.AmbientLight(0x6a5a9a, 0.5);
-const moon = new THREE.DirectionalLight(0x9a8acd, 0.4);
+scene.background = new THREE.Color(PALETTE.sky);
+scene.fog = new THREE.Fog(PALETTE.fog, 20, 110);
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 400);
+const ambient = new THREE.AmbientLight(0xbfc8ff, 0.15);
+const moon = new THREE.DirectionalLight(0x9aa8e0, 0.35);
 moon.position.set(-20, 40, -10);
 scene.add(ambient, moon);
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+const mat = (color, emissive = 0, ei = 0) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: ei, roughness: 0.85 });
 
-const mat = (color, emissive = 0x000000, ei = 0) =>
-  new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: ei, roughness: 0.8 });
-
-// island + cloud sea
-const island = new THREE.Mesh(new THREE.CylinderGeometry(WORLD.island_radius, WORLD.island_radius - 4, 4, 64), mat(0x2f4a3a));
-island.position.y = -2;
-scene.add(island);
-const sea = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), mat(0x2a1a45));
-sea.rotation.x = -Math.PI / 2; sea.position.y = -5;
-scene.add(sea);
-// a few static rocks/trees for decoration (fixed positions, no randomness needed)
-for (let i = 0; i < 18; i++) {
-  const a = i * 2.4, r = 10 + ((i * 7) % 27);
-  const tree = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3, 6), mat(0x1e3a2c));
-  tree.position.set(Math.cos(a) * r, 1.5, Math.sin(a) * r);
-  scene.add(tree);
+// ---------- world building per night ----------
+let world = new THREE.Group();
+function buildWorld(n) {
+  scene.remove(world);
+  world = new THREE.Group();
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), mat(PALETTE.cloudSea));
+  sea.rotation.x = -Math.PI / 2; sea.position.y = -12; world.add(sea);
+  const disc = (r, x, z, y = 0, h = 4) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.9, h, 64), mat(PALETTE.grass));
+    m.position.set(x, y - h / 2, z); world.add(m);
+    const rim = new THREE.Mesh(new THREE.RingGeometry(r - 1.2, r, 64), mat(PALETTE.sand));
+    rim.rotation.x = -Math.PI / 2; rim.position.set(x, y + 0.02, z); world.add(rim);
+  };
+  if (n === 1) disc(40, 0, 0);
+  if (n === 2) {
+    disc(28, 0, 0); disc(28, 70, 0);
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(18, 0.3, 4), mat(PALETTE.wood));
+    bridge.position.set(35, -0.15, 0); world.add(bridge);
+  }
+  if (n === 3) {
+    disc(45, 0, 0);
+    const sh = new THREE.Shape();
+    sh.absarc(0, 0, 24, 0, Math.PI, false); sh.absarc(0, 0, 12, Math.PI, 0, true);
+    const f1 = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 3, bevelEnabled: false, curveSegments: 32 }), mat(PALETTE.grass));
+    f1.rotation.x = Math.PI / 2; f1.position.y = 3; world.add(f1);
+    const f2 = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 6, 48), mat(PALETTE.sand)); f2.position.y = 3; world.add(f2);
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 8, 24), mat(PALETTE.wood)); tower.position.y = 10; world.add(tower);
+    const bell = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 12), mat(PALETTE.gold, PALETTE.gold, 0.3)); bell.position.y = 13; world.add(bell);
+    for (const deg of [30, 150]) {
+      const a = (deg * Math.PI) / 180, len = Math.hypot(6, 3);
+      const ramp = new THREE.Mesh(new THREE.BoxGeometry(len, 0.3, 3), mat(PALETTE.wood));
+      ramp.position.set(27 * Math.cos(a), 1.5, 27 * Math.sin(a));
+      ramp.rotation.set(0, -a, Math.atan2(3, 6)); world.add(ramp);
+    }
+  }
+  for (const pad of NIGHTS[n].pads) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(pad.r, pad.r, 0.15, 24), mat(PALETTE.gold, PALETTE.gold, 0.8));
+    m.position.set(pad.pos[0], pad.pos[1] + 0.08, pad.pos[2]); world.add(m);
+  }
+  scene.add(world);
 }
 
 // ---------- entity meshes ----------
 function makePlayer() {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 1.1, 12), mat(0x3b6ea8));
-  body.position.y = 0.55;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), mat(0xf2d0a9));
-  head.position.y = 1.35;
-  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.45, 24), mat(0xe8d39a)); // nón lá
-  hat.position.y = 1.75;
-  const string = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.35), mat(0x553311));
-  string.position.set(0.7, 1.4, 0);
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(0xffb347, 0xff9a2a, 2));
-  lamp.position.set(0.7, 1.2, 0);
-  const light = new THREE.PointLight(0xffa040, 2, 9, 1.5);
-  light.position.copy(lamp.position);
-  g.add(body, head, hat, string, lamp, light);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 1.1, 12), mat(PALETTE.shirt)); body.position.y = 0.55;
+  const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.08, 8, 16), mat(PALETTE.scarf)); scarf.rotation.x = Math.PI / 2; scarf.position.y = 1.12;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), mat(0xf2d0a9)); head.position.y = 1.4;
+  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.45, 24), mat(PALETTE.sand)); hat.position.y = 1.8;
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), mat(PALETTE.lanternLit, PALETTE.lanternLit, 2)); lamp.position.set(0.7, 1.25, 0);
+  const light = new THREE.PointLight(0xffa040, 2, 10, 1.5); light.position.copy(lamp.position);
+  g.add(body, scarf, head, hat, lamp, light);
   g.userData = { lamp, light };
   return g;
 }
 function makeLantern() {
   const g = new THREE.Group();
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 3.2, 8), mat(0x4a2e1a));
-  post.position.y = 1.6;
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), mat(0x6b3a2a, 0xff8a20, 0));
-  body.scale.y = 1.3; body.position.y = 3.6;
-  const light = new THREE.PointLight(0xffa040, 0, 26, 1.2);
-  light.position.y = 3.6;
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 3.2, 8), mat(PALETTE.wood)); post.position.y = 1.6;
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), mat(PALETTE.lanternOff, PALETTE.lanternLit, 0)); body.scale.y = 1.3; body.position.y = 3.6;
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), mat(PALETTE.lanternCore, PALETTE.lanternCore, 0)); core.position.y = 3.6;
+  const light = new THREE.PointLight(0xffa040, 0, 26, 1.2); light.position.y = 3.6;
   const ring = new THREE.Mesh(new THREE.RingGeometry(T.safe_radius - 0.15, T.safe_radius, 48),
-    new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0, side: THREE.DoubleSide }));
-  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.03;
-  g.add(post, body, light, ring);
-  g.userData = { body, light, ring };
+    new THREE.MeshBasicMaterial({ color: PALETTE.lanternLit, transparent: true, opacity: 0, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+  g.add(post, body, core, light, ring);
+  g.userData = { body, core, light, ring };
   return g;
 }
 const moteGeo = new THREE.SphereGeometry(0.15, 8, 6);
-const moteMat = mat(0xfff0a0, 0xffd060, 3);
+const haloGeo = new THREE.SphereGeometry(0.3, 8, 6);
+const moteMat = mat(PALETTE.moteCore, PALETTE.moteCore, 3);
+const haloMat = new THREE.MeshBasicMaterial({ color: PALETTE.moteHalo, transparent: true, opacity: 0.35 });
+function makeMote() { const g = new THREE.Group(); g.add(new THREE.Mesh(moteGeo, moteMat), new THREE.Mesh(haloGeo, haloMat)); return g; }
 function makeShade() {
   const g = new THREE.Group();
-  const blob = new THREE.Mesh(new THREE.SphereGeometry(0.75, 16, 12), mat(0x14081f, 0x3a0a5a, 0.6));
+  const blob = new THREE.Mesh(new THREE.SphereGeometry(0.75, 16, 12), mat(PALETTE.shadeBody, PALETTE.shadeRim, 0.5));
   const eyeM = mat(0xffffff, 0xd0b0ff, 1);
-  const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), eyeM);
-  const e2 = e1.clone();
+  const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), eyeM), e2 = e1.clone();
   e1.position.set(0.25, 0.15, 0.62); e2.position.set(-0.25, 0.15, 0.62);
-  g.add(blob, e1, e2);
-  g.userData = { blob };
+  g.add(blob, e1, e2); g.userData = { blob };
   return g;
 }
-
-// ---------- game state & sync ----------
-let game, yaw = 0, started = false;
-const lanternMeshes = new Map(), moteMeshes = new Map(), shadeMeshes = new Map();
-const player = makePlayer();
-scene.add(player);
-const pulses = []; // visual rings
-const sparks = []; // creative: firefly swirl when a lantern is lit
-
-function reset() {
-  for (const m of [...lanternMeshes.values(), ...moteMeshes.values(), ...shadeMeshes.values()]) scene.remove(m);
-  lanternMeshes.clear(); moteMeshes.clear(); shadeMeshes.clear();
-  game = createGame({ seed: (Date.now() & 0x7fffffff) });
-  for (const l of game.lanterns) {
-    const m = makeLantern(); m.position.set(l.pos[0], l.pos[1], l.pos[2]);
-    scene.add(m); lanternMeshes.set(l.id, m);
-  }
-  prev = { jump: false, interact: false, pulse: false };
+function makeDrifter() {
+  const m = new THREE.Mesh(new THREE.TorusKnotGeometry(0.4, 0.08, 48, 6), mat(PALETTE.drifter, PALETTE.drifter, 0.4));
+  return m;
+}
+function makeCharm() {
+  const g = new THREE.Group();
+  const paper = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.05), mat(PALETTE.scarf, PALETTE.scarf, 0.3));
+  const border = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.03), mat(PALETTE.gold, PALETTE.gold, 0.5));
+  g.add(border, paper); return g;
 }
 
-function sync(t) {
-  const p = game.player;
-  player.position.set(p.pos[0], p.pos[1], p.pos[2]);
-  player.visible = !(p.invuln > 0 && Math.floor(t * 12) % 2 === 0);
-  player.userData.light.intensity = 1 + p.carried * 0.25;
-  player.userData.lamp.scale.setScalar(1 + p.carried * 0.06);
-  // motes
-  const alive = new Set();
-  for (const m of game.motes) {
-    alive.add(m.id);
-    let mesh = moteMeshes.get(m.id);
-    if (!mesh) { mesh = new THREE.Mesh(moteGeo, moteMat); scene.add(mesh); moteMeshes.set(m.id, mesh); }
-    const ph = parseInt(m.id.slice(1), 10);
-    mesh.position.set(m.pos[0] + Math.sin(t * 2 + ph) * 0.15, 0.9 + Math.sin(t * 3 + ph) * 0.25, m.pos[2]);
-  }
-  for (const [id, mesh] of moteMeshes) if (!alive.has(id)) { scene.remove(mesh); moteMeshes.delete(id); }
-  // shades
-  const live = new Set();
-  for (const s of game.shades) {
-    live.add(s.id);
-    let mesh = shadeMeshes.get(s.id);
-    if (!mesh) { mesh = makeShade(); scene.add(mesh); shadeMeshes.set(s.id, mesh); }
-    mesh.position.set(s.pos[0], s.pos[1] + Math.sin(t * 4 + s.pos[0]) * 0.1, s.pos[2]);
-    mesh.lookAt(p.pos[0], s.pos[1], p.pos[2]);
-    const stunned = s.state === 'stunned';
-    mesh.scale.set(stunned ? 1.3 : 1, stunned ? 0.6 : 1, stunned ? 1.3 : 1);
-    mesh.userData.blob.material.emissive.setHex(stunned ? 0x6060a0 : 0x3a0a5a);
-  }
-  for (const [id, mesh] of shadeMeshes) if (!live.has(id)) { scene.remove(mesh); shadeMeshes.delete(id); }
-  // lanterns: glow grows with deposited light
-  let lit = 0;
-  for (const l of game.lanterns) {
-    const u = lanternMeshes.get(l.id).userData;
-    const f = l.deposited / T.lantern_cost;
-    if (l.lit) lit++;
-    u.body.material.emissiveIntensity = l.lit ? 2.2 + Math.sin(t * 2) * 0.2 : f * 0.6;
-    u.body.material.color.setHex(l.lit ? 0xffb347 : 0x6b3a2a);
-    u.light.intensity = l.lit ? 6 : f * 1.5;
-    u.ring.material.opacity = l.lit ? 0.35 : 0;
-  }
-  // creative: island warms up as lanterns are lit
-  const k = lit / game.lanterns.length;
-  scene.background.copy(NIGHT).lerp(WARM, k);
-  scene.fog.color.copy(scene.background);
-  scene.fog.density = 0.035 - 0.02 * k;
-  ambient.intensity = 0.5 + 0.8 * k;
+// ---------- audio (WebAudio, synthesized) ----------
+let actx = null, master = null, musicTimer = null;
+function initAudio() {
+  if (actx) return;
+  try { actx = new AudioContext(); master = actx.createGain(); master.connect(actx.destination); } catch { actx = null; }
+  applyVolume();
 }
-
-// ---------- audio (creative, WebAudio, no asset files) ----------
-let actx = null;
-const PENTA = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.5, 1567.98, 1760, 2093];
+const applyVolume = () => { if (master) master.gain.value = settings.volume; };
 function tone(freq, dur = 0.25, type = 'sine', vol = 0.15) {
   if (!actx) return;
   const o = actx.createOscillator(), gn = actx.createGain();
   o.type = type; o.frequency.value = freq;
   gn.gain.setValueAtTime(vol, actx.currentTime);
   gn.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
-  o.connect(gn).connect(actx.destination); o.start(); o.stop(actx.currentTime + dur);
+  o.connect(gn).connect(master); o.start(); o.stop(actx.currentTime + dur);
 }
+const SCALES = { 1: [262, 294, 330, 392, 440], 2: [220, 247, 277, 330, 370], 3: [196, 220, 247, 294, 330] };
+function startMusic(n) {
+  stopMusic();
+  let i = 0;
+  musicTimer = setInterval(() => {
+    if (ui !== 'play') return;
+    const s = SCALES[n];
+    tone(s[(i * 3) % s.length] / 2, 1.2, 'triangle', 0.05);
+    if (i % 2 === 0) tone(s[(i * 7) % s.length], 0.6, 'sine', 0.04);
+    i++;
+  }, 600);
+}
+const stopMusic = () => { if (musicTimer) clearInterval(musicTimer); musicTimer = null; };
+const SFX = {
+  mote_picked: (e) => tone(523 * Math.pow(2, e.data.carried / 12), 0.15),
+  lantern_lit: () => [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.5, 'triangle'), i * 110)),
+  pulse: () => tone(220, 0.5, 'sawtooth', 0.08),
+  player_hit: () => tone(130, 0.4, 'square', 0.1),
+  dash: () => tone(880, 0.12, 'triangle', 0.08),
+  shade_spawned: () => tone(98, 0.6, 'sawtooth', 0.05),
+  drifter_steal: () => tone(300, 0.3, 'square', 0.06),
+  charm_picked: () => tone(1046, 0.3, 'triangle', 0.1),
+};
 
-function onEvent(ev) {
-  const p = game.player.pos;
-  switch (ev.name) {
-    case 'mote_picked': tone(PENTA[Math.min(ev.data.carried, PENTA.length - 1)], 0.2); break;
-    case 'deposit': tone(392, 0.3, 'triangle'); break;
-    case 'lantern_lit': {
-      [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.5, 'triangle'), i * 110));
-      const l = game.lanterns.find((x) => x.id === ev.data.lantern_id);
-      for (let i = 0; i < 40; i++) {
-        const s = new THREE.Mesh(moteGeo, moteMat);
-        s.userData = { c: l.pos, a: i * 0.7, r: 0.5 + (i % 5) * 0.4, life: 2.5 };
-        scene.add(s); sparks.push(s);
-      }
-      break;
+// ---------- game flow: menu -> intro -> play -> result -> next night -> dawn ----------
+let ui = 'menu', game = null, nightNo = 1, totalScore = 0, yaw = 0, acc = 0;
+const meshes = { lantern: new Map(), mote: new Map(), shade: new Map(), drifter: new Map(), charm: new Map() };
+const player = makePlayer();
+scene.add(player);
+const fx = [];
+let prevInput = {}, lastCountdown = -1, wasGrounded = true;
+
+function startNight(n) {
+  nightNo = n;
+  for (const [k, m] of Object.entries(meshes)) { for (const o of m.values()) scene.remove(o); m.clear(); }
+  game = createGame({ seed: Date.now() & 0x7fffffff, night: n });
+  buildWorld(n);
+  for (const l of game.lanterns) { const m = makeLantern(); m.position.set(...l.pos); scene.add(m); meshes.lantern.set(l.id, m); }
+  for (const c of game.charms) { const m = makeCharm(); scene.add(m); meshes.charm.set(c.id, m); }
+  const st = game.player.facing;
+  yaw = Math.atan2(st[0], st[1]); acc = 0; lastCountdown = -1;
+  const sp = game.player.pos; // snap the camera behind Mây (avoid starting inside the tower)
+  camera.position.set(sp[0] - Math.sin(yaw) * 9, sp[1] + 6, sp[2] - Math.cos(yaw) * 9);
+  showOverlay(`<h1>Đêm ${n} — ${NIGHTS[n].name}</h1><p>${INTRO[n]}</p><p><kbd>Enter</kbd> để bắt đầu</p>`);
+  ui = 'intro';
+}
+function play() { initAudio(); hideOverlay(); ui = 'play'; startMusic(nightNo); }
+function onGameOver({ result }) {
+  stopMusic();
+  if (result === 'won') {
+    totalScore += game.score;
+    [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => tone(f, 0.6, 'triangle'), i * 120));
+    if (nightNo === 3) {
+      ui = 'dawn';
+      showOverlay(`<h1>Bình Minh</h1><p>Ba hòn đảo đã sáng trở lại. Cảm ơn con, Mây.</p><p>Tổng điểm: <b>${totalScore}</b></p><p><kbd>Enter</kbd> về menu</p>`);
+      document.body.style.background = '#f7c56b';
+    } else {
+      ui = 'result';
+      showOverlay(`<h1>Đêm ${nightNo}: thắng!</h1><p>Điểm đêm: <b>${game.score}</b> · Tổng: <b>${totalScore}</b></p><p><kbd>Enter</kbd> sang Đêm ${nightNo + 1}</p>`);
     }
-    case 'pulse': {
-      tone(220, 0.5, 'sawtooth', 0.08);
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48),
-        new THREE.MeshBasicMaterial({ color: 0xffd080, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
-      ring.rotation.x = -Math.PI / 2; ring.position.set(p[0], 0.2, p[2]); ring.userData.life = 0.4;
-      scene.add(ring); pulses.push(ring);
-      break;
-    }
-    case 'player_hit': tone(140, 0.4, 'square', 0.1); break;
-    case 'game_over': showEnd(ev.data); break;
+  } else {
+    [392, 330, 262].forEach((f, i) => setTimeout(() => tone(f, 0.5, 'sine'), i * 180));
+    ui = 'lost';
+    showOverlay(`<h1>Thua rồi</h1><p>${game.state === 'lost' && game.player.flames <= 0 ? 'Mây đã hết lửa…' : 'Trời đã sáng mà đảo vẫn tối…'}</p><p><kbd>R</kbd> / <kbd>Enter</kbd> chơi lại Đêm ${nightNo}</p>`);
   }
 }
+function showMenu() {
+  stopMusic(); ui = 'menu'; totalScore = 0;
+  showOverlay(`<h1>Đảo Đèn Lồng</h1><p>Giúp Mây thắp lại đèn lồng của ba hòn đảo trước bình minh.</p>
+    <p><kbd>W A S D</kbd> đi · <kbd>Space</kbd> nhảy · <kbd>Shift</kbd> lướt · <kbd>E</kbd> nạp đèn · <kbd>F</kbd> tỏa sáng<br>
+    kéo chuột / <kbd>Q</kbd> <kbd>C</kbd> xoay camera · <kbd>Esc</kbd>/<kbd>P</kbd> tạm dừng</p>
+    <p><button data-act="start">Bắt đầu (Enter)</button> <button data-act="settings">Cài đặt</button></p>`);
+}
+function showPause() {
+  ui = 'pause';
+  showOverlay(`<h1>Tạm dừng</h1><p><button data-act="resume">Tiếp tục</button></p><p><button data-act="restart">Chơi lại Đêm</button></p>
+    <p><button data-act="settings">Cài đặt</button></p><p><button data-act="menu">Về menu</button></p>`);
+}
+let settingsBack = 'menu';
+function showSettings() {
+  settingsBack = ui === 'pause' ? 'pause' : 'menu'; ui = 'settings';
+  showOverlay(`<h1>Cài đặt</h1>
+    <p>Âm lượng <input id="vol" type="range" min="0" max="1" step="0.05" value="${settings.volume}"></p>
+    <p>Độ nhạy chuột <input id="sens" type="range" min="0.2" max="3" step="0.1" value="${settings.sensitivity}"></p>
+    <p><button data-act="back">Xong</button></p>`);
+  $('vol').oninput = (e) => { settings.volume = +e.target.value; applyVolume(); saveSettings(); };
+  $('sens').oninput = (e) => { settings.sensitivity = +e.target.value; saveSettings(); };
+}
+function showOverlay(html) { $('overlayBox').innerHTML = html; $('overlay').classList.remove('hidden'); }
+function hideOverlay() { $('overlay').classList.add('hidden'); }
+$('overlay').addEventListener('click', (e) => {
+  const act = e.target.dataset && e.target.dataset.act;
+  if (!act) return;
+  if (act === 'start') { initAudio(); totalScore = 0; startNight(1); }
+  if (act === 'settings') showSettings();
+  if (act === 'resume') play();
+  if (act === 'restart') { startNight(nightNo); }
+  if (act === 'menu') showMenu();
+  if (act === 'back') (settingsBack === 'pause' ? showPause : showMenu)();
+});
 
 // ---------- input ----------
 const keys = new Set();
-let prev = { jump: false, interact: false, pulse: false };
 addEventListener('keydown', (e) => {
   keys.add(e.code);
-  if (e.code === 'Enter' && !started) start();
-  if (e.code === 'KeyR' && started && game.state !== 'playing') start();
   if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'Escape' || e.code === 'KeyP') { if (ui === 'play') showPause(); else if (ui === 'pause') play(); }
+  if (e.code === 'Enter') {
+    if (ui === 'menu') { initAudio(); totalScore = 0; startNight(1); }
+    else if (ui === 'intro') play();
+    else if (ui === 'result') startNight(nightNo + 1);
+    else if (ui === 'lost') startNight(nightNo);
+    else if (ui === 'dawn') { document.body.style.background = ''; showMenu(); }
+  }
+  if (e.code === 'KeyR' && ui === 'lost') startNight(nightNo);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 let dragging = false;
-addEventListener('mousedown', () => { dragging = true; });
+addEventListener('mousedown', (e) => { if (e.target === renderer.domElement) dragging = true; });
 addEventListener('mouseup', () => { dragging = false; });
-addEventListener('mousemove', (e) => { if (dragging) yaw -= e.movementX * 0.006; });
-
+addEventListener('mousemove', (e) => { if (dragging) yaw -= e.movementX * 0.006 * settings.sensitivity; });
 function readInput() {
-  // Screen-right is world -X at yaw 0 (camera looks along +Z), so D sends x = -1.
   const x = (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) - (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0);
   const z = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
-  return {
-    move: [x, z],
-    cam_yaw_deg: (yaw * 180) / Math.PI,
-    jump: keys.has('Space'),
-    interact: keys.has('KeyE'),
-    pulse: keys.has('KeyF') || keys.has('ShiftLeft'),
-  };
+  return { move: [x, z], cam_yaw_deg: (yaw * 180) / Math.PI, jump: keys.has('Space'), interact: keys.has('KeyE'),
+    pulse: keys.has('KeyF'), dash: keys.has('ShiftLeft') || keys.has('ShiftRight'), pause: false };
 }
 
-// ---------- HUD / overlay ----------
-function fmtTime(ticks) {
-  const s = Math.max(0, Math.ceil(ticks / TICK_RATE));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-function hud() {
-  const p = game.player;
-  const lit = game.lanterns.filter((l) => l.lit).length;
-  $('hud').innerHTML =
-    `Lửa: <b>${'●'.repeat(Math.max(0, p.flames))}${'○'.repeat(Math.max(0, T.flames - p.flames))}</b><br>` +
-    `Đom đóm: <b>${p.carried}/${T.carry_capacity}</b><br>` +
-    `Đèn đã thắp: <b>${lit}/${game.lanterns.length}</b><br>` +
-    `Bình minh sau: <b>${fmtTime(game.timeLeftTicks)}</b><br>` +
-    `Điểm: <b>${game.score}</b><br>` +
-    `Tỏa sáng [F]: <b>${p.pulseCd > 0 ? 'hồi…' : p.carried >= T.pulse_cost ? 'sẵn sàng' : `cần ${T.pulse_cost} đom đóm`}</b>`;
-  let hint = '';
-  if (game.state === 'playing') {
-    const near = game.lanterns.find((l) => !l.lit &&
-      Math.hypot(l.pos[0] - p.pos[0], l.pos[2] - p.pos[2]) <= T.interact_radius);
-    if (near) hint = p.carried > 0 ? `Nhấn E để nạp ánh sáng (${near.deposited}/${T.lantern_cost})`
-                                   : `Đèn cần ${T.lantern_cost - near.deposited} đom đóm nữa`;
+// ---------- sync & HUD ----------
+function syncList(kind, list, make, place) {
+  const map = meshes[kind], alive = new Set();
+  for (const e of list) {
+    alive.add(e.id);
+    let m = map.get(e.id);
+    if (!m) { m = make(); scene.add(m); map.set(e.id, m); }
+    place(m, e);
   }
+  for (const [id, m] of map) if (!alive.has(id)) { scene.remove(m); map.delete(id); }
+}
+function sync(t) {
+  const p = game.player;
+  player.position.set(...p.pos);
+  player.rotation.y = Math.atan2(p.facing[0], p.facing[1]);
+  player.visible = !(p.invuln > 0 && Math.floor(t * 12) % 2 === 0) && p.fallWait === 0;
+  player.userData.light.intensity = 1 + p.carried * 0.25;
+  syncList('mote', game.motes, makeMote, (m, e) => {
+    const ph = parseInt(e.id.slice(1), 10);
+    m.position.set(e.pos[0], e.pos[1] + 0.9 + Math.sin(t * 3 + ph) * 0.2, e.pos[2]);
+    m.scale.setScalar(e.kind === 'dropped' ? 0.8 + Math.sin(t * 10) * 0.1 : 1);
+  });
+  syncList('shade', game.shades, makeShade, (m, s) => {
+    m.position.set(s.pos[0], s.pos[1] + Math.sin(t * 4 + s.pos[0]) * 0.1, s.pos[2]);
+    m.lookAt(p.pos[0], s.pos[1], p.pos[2]);
+    const stunned = s.state === 'stunned';
+    m.scale.setScalar(s.state === 'spawning' ? 0.5 + 0.5 * (1 - s.stateTicks / 60) : 1);
+    if (stunned) m.scale.set(1.3, 0.6, 1.3);
+    m.userData.blob.material.color.setHex(stunned ? PALETTE.shadeStunned : PALETTE.shadeBody);
+  });
+  syncList('drifter', game.drifters.filter((d) => d.state !== 'removed'), makeDrifter, (m, d) => {
+    m.position.set(...d.pos); m.rotation.set(t * 2, t * 3, 0);
+  });
+  for (const c of game.charms) {
+    const m = meshes.charm.get(c.id);
+    m.visible = c.available; m.position.set(c.pos[0], c.pos[1] + 1 + Math.sin(t * 2) * 0.2, c.pos[2]); m.rotation.y = t;
+  }
+  let lit = 0;
+  for (const l of game.lanterns) {
+    const u = meshes.lantern.get(l.id).userData, f = l.deposited / T.lantern_cost;
+    if (l.lit) lit++;
+    u.body.material.color.setHex(l.lit ? PALETTE.lanternLit : PALETTE.lanternOff);
+    u.body.material.emissiveIntensity = l.lit ? 1.6 + Math.sin(t * 2) * 0.2 : f * 0.8;
+    u.core.material.emissiveIntensity = l.lit ? 2 : f;
+    u.light.intensity = l.lit ? 6 : f * 1.5;
+    u.ring.material.opacity = l.lit ? 0.35 : 0;
+  }
+  ambient.intensity = 0.15 + 0.55 * (lit / game.lanterns.length); // standard formula
+}
+function hud(t) {
+  const p = game.player, lit = game.lanterns.filter((l) => l.lit).length;
+  const secs = Math.max(0, Math.ceil(game.timeLeftTicks / TICK_RATE));
+  const danger = secs <= 30;
+  $('hudFlames').textContent = '🏮'.repeat(Math.max(0, p.flames)) + '·'.repeat(Math.max(0, T.flames - p.flames));
+  const clock = $('hudClock');
+  clock.textContent = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+  clock.style.color = danger ? PALETTE.danger : PALETTE.text;
+  clock.style.opacity = danger && Math.floor(t * 2) % 2 ? 0.35 : 1;
+  $('hudRight').innerHTML = `Đèn <b>${lit}/${game.lanterns.length}</b><br>Điểm <b>${totalScore + game.score}</b>`;
+  $('hudBar').innerHTML = Array.from({ length: T.carry_capacity }, (_, i) => `<span class="${i < p.carried ? 'on' : ''}"></span>`).join('');
+  const cd = (left, total) => (left > 0 ? `${(left / TICK_RATE).toFixed(1)}s` : 'sẵn sàng');
+  $('hudCd').innerHTML = `Lướt [Shift]: <b>${p.charm > 0 ? 'bùa!' : cd(p.dashCd)}</b><br>Tỏa sáng [F]: <b>${p.carried < T.pulse_cost ? `cần ${T.pulse_cost}` : cd(p.pulseCd)}</b>`;
+  let hint = '';
+  const unlit = game.lanterns.filter((l) => !l.lit);
+  const near = unlit.find((l) => Math.hypot(l.pos[0] - p.pos[0], l.pos[2] - p.pos[2]) <= T.interact_radius);
+  if (near) hint = `E — Nạp ánh sáng (${near.deposited}/${T.lantern_cost})`;
   $('hint').textContent = hint;
-}
-function showIntro() {
-  $('overlayBox').innerHTML = `<h1>Đảo Đèn Lồng</h1>
-    <p>Đêm 1 – Đảo Bến. Sương đen đã nuốt ánh sáng của đảo.<br>Hãy giúp Mây gom đom đóm và thắp lại <b>5 Đèn Lồng Lớn</b> trước bình minh.</p>
-    <p><kbd>W A S D</kbd> di chuyển · <kbd>Space</kbd> nhảy · kéo chuột hoặc <kbd>Q</kbd>/<kbd>C</kbd> xoay camera<br>
-    <kbd>E</kbd> nạp ánh sáng vào đèn · <kbd>F</kbd> tỏa sáng xua Bóng Mực (tốn ${T.pulse_cost} đom đóm)</p>
-    <p>Bóng Mực sợ đèn đã thắp: đứng gần đèn sáng là an toàn.</p>
-    <p><kbd>Enter</kbd> để bắt đầu</p>`;
-  $('overlay').classList.remove('hidden');
-}
-function showEnd({ result, reason }) {
-  const why = { all_lit: 'Mọi Đèn Lồng Lớn đã sáng!', dawn: 'Trời đã sáng mà đảo vẫn tối…', no_flames: 'Mây đã hết lửa…' }[reason];
-  $('overlayBox').innerHTML = `<h1>${result === 'won' ? 'Chiến thắng!' : 'Thua rồi'}</h1>
-    <p>${why}</p><p>Điểm: <b>${game.score}</b></p><p><kbd>R</kbd> để chơi lại</p>`;
-  $('overlay').classList.remove('hidden');
-}
-function start() {
-  if (!actx) try { actx = new AudioContext(); } catch { actx = null; }
-  reset(); started = true; yaw = 0;
-  $('overlay').classList.add('hidden');
+  // arrow to the nearest unlit lantern when it is off-screen
+  const arrow = $('arrow');
+  arrow.style.display = 'none';
+  if (unlit.length) {
+    const tgt = unlit.reduce((a, b) => (Math.hypot(a.pos[0] - p.pos[0], a.pos[2] - p.pos[2]) < Math.hypot(b.pos[0] - p.pos[0], b.pos[2] - p.pos[2]) ? a : b));
+    const v = new THREE.Vector3(tgt.pos[0], tgt.pos[1] + 3.6, tgt.pos[2]).project(camera);
+    const off = v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1;
+    if (off) {
+      let x = v.x, y = v.y;
+      if (v.z > 1) { x = -x; y = -y; }
+      const a = Math.atan2(y, x);
+      arrow.style.display = 'block';
+      arrow.style.left = `${innerWidth / 2 + Math.cos(a) * (innerWidth / 2 - 50)}px`;
+      arrow.style.top = `${innerHeight / 2 - Math.sin(a) * (innerHeight / 2 - 50)}px`;
+      arrow.style.transform = `translate(-50%,-50%) rotate(${-a}rad)`;
+    }
+  }
+  if (secs <= 10 && secs !== lastCountdown && ui === 'play') { lastCountdown = secs; tone(secs === 0 ? 220 : 660, 0.12, 'square', 0.06); }
 }
 
-// ---------- main loop (fixed 60 Hz sim) ----------
-reset();
-showIntro();
-// ?autostart skips the intro (used for screenshots / proof).
-if (new URLSearchParams(location.search).has('autostart')) start();
-let acc = 0, last = performance.now();
+// ---------- main loop ----------
+let last = performance.now(), frames = 0, fpsT = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (keys.has('KeyQ')) yaw += 1.8 * dt;
-  if (keys.has('KeyC')) yaw -= 1.8 * dt;
-  if (started && game.state === 'playing') {
+  if (keys.has('KeyQ')) yaw += 1.8 * dt * settings.sensitivity;
+  if (keys.has('KeyC')) yaw -= 1.8 * dt * settings.sensitivity;
+  if (ui === 'play') {
     acc += dt;
-    while (acc >= 1 / TICK_RATE) {
+    while (acc >= 1 / TICK_RATE && ui === 'play') {
       acc -= 1 / TICK_RATE;
-      for (const ev of step(game, readInput())) onEvent(ev);
-      if (game.state !== 'playing') break;
+      const inp = readInput();
+      if (inp.jump && !prevInput.jump && game.player.grounded) tone(440, 0.15, 'sine', 0.08);
+      prevInput = inp;
+      for (const ev of step(game, inp)) {
+        if (SFX[ev.name]) SFX[ev.name](ev);
+        if (ev.name === 'pulse') {
+          const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48), new THREE.MeshBasicMaterial({ color: PALETTE.lanternCore, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+          ring.rotation.x = -Math.PI / 2; ring.position.set(game.player.pos[0], game.player.pos[1] + 0.2, game.player.pos[2]); ring.userData.life = 0.4;
+          scene.add(ring); fx.push(ring);
+        }
+        if (ev.name === 'game_over') onGameOver(ev.data);
+      }
     }
   }
   const t = now / 1000;
-  sync(t);
-  hud();
-  // effects
-  for (let i = pulses.length - 1; i >= 0; i--) {
-    const r = pulses[i]; r.userData.life -= dt;
-    const s = 1 + (1 - r.userData.life / 0.4) * (T.pulse_radius - 1);
-    r.scale.set(s, s, s); r.material.opacity = Math.max(0, r.userData.life / 0.4);
-    if (r.userData.life <= 0) { scene.remove(r); pulses.splice(i, 1); }
+  if (game) {
+    sync(t); hud(t);
+    $('hud').style.display = ui === 'menu' || ui === 'dawn' ? 'none' : 'block';
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const r = fx[i]; r.userData.life -= dt;
+      const s = 1 + (1 - r.userData.life / 0.4) * (T.pulse_radius - 1);
+      r.scale.set(s, s, s); r.material.opacity = Math.max(0, r.userData.life / 0.4);
+      if (r.userData.life <= 0) { scene.remove(r); fx.splice(i, 1); }
+    }
+    const p = player.position, fxv = Math.sin(yaw), fzv = Math.cos(yaw);
+    camera.position.lerp(new THREE.Vector3(p.x - fxv * 9, p.y + 6, p.z - fzv * 9), 0.15);
+    camera.lookAt(p.x + fxv * 2, p.y + 1.2, p.z + fzv * 2);
   }
-  for (let i = sparks.length - 1; i >= 0; i--) {
-    const s = sparks[i], u = s.userData; u.life -= dt; u.a += dt * 3; u.r += dt * 1.5;
-    s.position.set(u.c[0] + Math.cos(u.a) * u.r, 3.6 + (2.5 - u.life) * 2, u.c[2] + Math.sin(u.a) * u.r);
-    if (u.life <= 0) { scene.remove(s); sparks.splice(i, 1); }
-  }
-  // camera behind the player, looking along the yaw direction
-  const p = player.position;
-  const fx = Math.sin(yaw), fz = Math.cos(yaw);
-  camera.position.lerp(new THREE.Vector3(p.x - fx * 9, p.y + 6, p.z - fz * 9), 0.15);
-  camera.lookAt(p.x + fx * 2, p.y + 1.2, p.z + fz * 2);
   renderer.render(scene, camera);
+  frames++; fpsT += dt;
+  if (fpsT >= 1) { window.__fps = frames / fpsT; frames = 0; fpsT = 0; }
   requestAnimationFrame(frame);
 }
+
+// ?night=N&autostart jumps straight into a night (used for screenshots / proof).
+const qs = new URLSearchParams(location.search);
+startNight(Math.min(3, Math.max(1, parseInt(qs.get('night') || '1', 10))));
+if (qs.has('autostart')) play(); else showMenu();
 requestAnimationFrame(frame);
