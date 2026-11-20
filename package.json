@@ -5,10 +5,13 @@
   "type": "module",
   "private": true,
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
     "headless": "node src/headless.js",
-    "test": "node --test tests/"
+    "test": "node --test tests/",
+    "soak": "node --expose-gc --jitless src/soak.js --seed 7 --nights 10 --out soak.json"
   }
 }

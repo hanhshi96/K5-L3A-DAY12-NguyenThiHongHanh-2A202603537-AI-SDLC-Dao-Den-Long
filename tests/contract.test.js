@@ -8,8 +8,9 @@ import { TUNING } from '../src/sim/sim.js';
 const near = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
 const named = (r, n) => r.events.filter((e) => e.name === n);
 
-test('game.contract.json is v1.2 and mirrors the standard numbers', () => {
-  assert.equal(contract.contract_version, '1.2'); // P3: was 1.1 (P2: was 1.0)
+test('game.contract.json is v1.3 and mirrors the standard numbers', () => {
+  assert.equal(contract.contract_version, '1.3'); // P4: was 1.2 (P3: 1.1, P2: 1.0)
+  for (const k of ['build_cmd', 'run_cmd', 'headless_cmd', 'bench_cmd', 'soak_cmd']) assert.equal(typeof contract[k], 'string', k); // P4
   assert.deepEqual(contract.tuning, TUNING);
   // P2: standard numbers from Ticket-02 Part 1
   const std = { player_speed: 6, carry_capacity: 10, lantern_cost: 10, pickup_radius: 1, interact_radius: 2,

@@ -1,0 +1,92 @@
+{
+  "nights": 10,
+  "crashes": 0,
+  "results": [
+    "lost",
+    "lost",
+    "lost",
+    "lost",
+    "lost",
+    "lost",
+    "lost",
+    "lost",
+    "lost",
+    "lost"
+  ],
+  "mem_start_mb": 13.6,
+  "mem_end_mb": 15.4,
+  "duration_s": 0.4,
+  "gc_exposed": true,
+  "details": [
+    {
+      "night": 1,
+      "seed": 7,
+      "result": "lost",
+      "ticks": 1720,
+      "score": 0
+    },
+    {
+      "night": 2,
+      "seed": 8,
+      "result": "lost",
+      "ticks": 1453,
+      "score": 0
+    },
+    {
+      "night": 3,
+      "seed": 9,
+      "result": "lost",
+      "ticks": 3793,
+      "score": 0
+    },
+    {
+      "night": 1,
+      "seed": 10,
+      "result": "lost",
+      "ticks": 1736,
+      "score": 0
+    },
+    {
+      "night": 2,
+      "seed": 11,
+      "result": "lost",
+      "ticks": 1289,
+      "score": 0
+    },
+    {
+      "night": 3,
+      "seed": 12,
+      "result": "lost",
+      "ticks": 1894,
+      "score": 0
+    },
+    {
+      "night": 1,
+      "seed": 13,
+      "result": "lost",
+      "ticks": 1122,
+      "score": 0
+    },
+    {
+      "night": 2,
+      "seed": 14,
+      "result": "lost",
+      "ticks": 1758,
+      "score": 0
+    },
+    {
+      "night": 3,
+      "seed": 15,
+      "result": "lost",
+      "ticks": 1490,
+      "score": 0
+    },
+    {
+      "night": 1,
+      "seed": 16,
+      "result": "lost",
+      "ticks": 1946,
+      "score": 0
+    }
+  ]
+}
