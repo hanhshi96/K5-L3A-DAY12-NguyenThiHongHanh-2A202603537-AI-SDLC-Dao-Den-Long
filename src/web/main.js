@@ -91,7 +91,7 @@ function buildWorld(n) {
       const a = (deg * Math.PI) / 180, len = Math.hypot(6, 3);
       const ramp = new THREE.Mesh(new THREE.BoxGeometry(len, 0.3, 3), mat(PALETTE.wood));
       ramp.position.set(27 * Math.cos(a), 1.5, 27 * Math.sin(a));
-      ramp.rotation.set(0, -a, Math.atan2(3, 6)); world.add(ramp);
+      ramp.rotation.set(0, -a, -Math.atan2(3, 6)); world.add(ramp); // low end outside (r=30, Y=0), high end at floor 1 (r=24, Y=3)
     }
   }
   for (const pad of NIGHTS[n].pads) {
@@ -261,6 +261,10 @@ function spawnPulseFx() {
   scene.add(g); fx.push(g);
 }
 let prevInput = {}, lastCountdown = -1, wasGrounded = true;
+// Smooth rendering (visual only): the sim moves Mây 60 times per second, but the screen may draw 120+ frames.
+// We remember Mây's position before the latest tick and draw her between the two, so she glides instead of
+// stepping on every other frame (which made the follow camera look shaky). The sim itself is untouched.
+let prevPlayerPos = null;
 
 function startNight(n, opts = {}) {
   nightNo = n;
@@ -270,7 +274,7 @@ function startNight(n, opts = {}) {
   for (const l of game.lanterns) { const m = makeLantern(); m.position.set(...l.pos); scene.add(m); meshes.lantern.set(l.id, m); }
   for (const c of game.charms) { const m = makeCharm(); scene.add(m); meshes.charm.set(c.id, m); }
   const st = game.player.facing;
-  yaw = Math.atan2(st[0], st[1]); acc = 0; lastCountdown = -1;
+  yaw = Math.atan2(st[0], st[1]); acc = 0; lastCountdown = -1; prevPlayerPos = null;
   const sp = game.player.pos; // snap the camera behind Mây (avoid starting inside the tower)
   camera.position.set(sp[0] - Math.sin(yaw) * 9, sp[1] + 6, sp[2] - Math.cos(yaw) * 9);
   showOverlay(`<h1>Đêm ${n} — ${NIGHTS[n].name}</h1><p>${INTRO[n]}</p><p>Giữ ít nhất <b>${need(game.lanterns.length)}/${game.lanterns.length}</b> đèn sáng tới bình minh. Đèn cạn dầu sẽ tắt — nhấn E để châm.</p><p><kbd>Enter</kbd> để bắt đầu</p>`);
@@ -439,7 +443,10 @@ function syncList(kind, list, make, place) {
 }
 function sync(t) {
   const p = game.player;
-  player.position.set(...p.pos);
+  const alpha = ui === 'play' ? Math.min(1, acc * TICK_RATE) : 1, q = prevPlayerPos;
+  if (q && Math.hypot(p.pos[0] - q[0], p.pos[1] - q[1], p.pos[2] - q[2]) < 2) { // snap on respawn / big jumps
+    player.position.set(q[0] + (p.pos[0] - q[0]) * alpha, q[1] + (p.pos[1] - q[1]) * alpha, q[2] + (p.pos[2] - q[2]) * alpha);
+  } else player.position.set(...p.pos);
   player.rotation.y = Math.atan2(p.facing[0], p.facing[1]);
   player.visible = !(p.invuln > 0 && Math.floor(t * 12) % 2 === 0) && p.fallWait === 0;
   player.userData.light.intensity = 1 + p.carried * 0.25;
@@ -630,12 +637,15 @@ function captions(t, secs) {
 let last = performance.now(), frames = 0, fpsT = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  // Camera follow amount tuned for 60 fps, scaled so it feels the same on 120 Hz screens.
+  const follow = (k, dt) => 1 - Math.pow(1 - k, dt * 60);
   if (keys.has('KeyQ')) yaw += 1.8 * dt * settings.sensitivity;
   if (keys.has('KeyC')) yaw -= 1.8 * dt * settings.sensitivity;
   if (ui === 'play' || ui === 'bench') {
     acc += dt;
     while (acc >= 1 / TICK_RATE && ui === 'play') {
       acc -= 1 / TICK_RATE;
+      prevPlayerPos = game.player.pos.slice();
       const inp = ui === 'bench' ? BENCH_INPUT : readInput();
       if (inp.jump && !prevInput.jump && game.player.grounded) tone(440, 0.15, 'sine', 0.08);
       prevInput = inp;
@@ -666,10 +676,10 @@ function frame(now) {
       // Top-down view (visual only, Phase 4 creative): high above Mây, tilted slightly so "forward" (yaw) stays
       // at the top of the screen and WASD keeps the same meaning in both views. Movement is never changed here.
       if (settings.topDown) {
-        camera.position.lerp(new THREE.Vector3(p.x - fxv * 4, p.y + 18, p.z - fzv * 4), 0.12);
+        camera.position.lerp(new THREE.Vector3(p.x - fxv * 4, p.y + 18, p.z - fzv * 4), follow(0.12, dt));
         camera.lookAt(p.x + fxv * 1.5, p.y, p.z + fzv * 1.5);
       } else {
-        camera.position.lerp(new THREE.Vector3(p.x - fxv * 9, p.y + 6, p.z - fzv * 9), 0.15);
+        camera.position.lerp(new THREE.Vector3(p.x - fxv * 9, p.y + 6, p.z - fzv * 9), follow(0.15, dt));
         camera.lookAt(p.x + fxv * 2, p.y + 1.2, p.z + fzv * 2);
       }
       if (now < cue.shakeUntil && !settings.reducedMotion) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0));

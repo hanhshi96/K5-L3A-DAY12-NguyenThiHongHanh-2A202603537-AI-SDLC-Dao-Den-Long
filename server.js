@@ -45,7 +45,9 @@ export function startServer(port = 5173) {
       });
       return;
     }
-    if (p === '/') { res.writeHead(302, { Location: '/src/web/index.html' }); return res.end(); }
+    if (p === '/') { // keep the query string (?night=2&autostart, ?board, ?settings) when redirecting
+      res.writeHead(302, { Location: '/src/web/index.html' + new URL(req.url, 'http://x').search }); return res.end();
+    }
     const file = path.join(ROOT, p);
     if (!file.startsWith(ROOT + path.sep)) { res.writeHead(403); return res.end(); }
     fs.readFile(file, (err, data) => {
