@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { createGame, step, TUNING, TICK_RATE, NIGHTS, capacityOf, makeRng, windAt } from '../sim/sim.js';
 import { validName, isoWithOffset, addEntry, sortEntries } from '../leaderboard.js';
+import { buildDecor } from './decor.js';
 
 const T = TUNING;
 const $ = (id) => document.getElementById(id);
@@ -59,7 +60,8 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 const mat = (color, emissive = 0, ei = 0) => new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: ei, roughness: 0.85 });
 
 // ---------- world building per night ----------
-let world = new THREE.Group();
+let world = new THREE.Group(), decorAnim = null;
+const LH = 4.6; // lantern head height (visual only)
 function buildWorld(n) {
   scene.remove(world);
   world = new THREE.Group();
@@ -74,7 +76,7 @@ function buildWorld(n) {
   if (n === 1) disc(40, 0, 0);
   if (n === 2) {
     disc(28, 0, 0); disc(28, 70, 0);
-    const bridge = new THREE.Mesh(new THREE.BoxGeometry(18, 0.3, 4), mat(PALETTE.wood));
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(18, 0.3, 4), mat(0x4a3420));
     bridge.position.set(35, -0.15, 0); world.add(bridge);
   }
   if (n === 3) {
@@ -84,8 +86,6 @@ function buildWorld(n) {
     const f1 = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 3, bevelEnabled: false, curveSegments: 32 }), mat(PALETTE.grass));
     f1.rotation.x = Math.PI / 2; f1.position.y = 3; world.add(f1);
     const f2 = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 6, 48), mat(PALETTE.sand)); f2.position.y = 3; world.add(f2);
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 8, 24), mat(PALETTE.wood)); tower.position.y = 10; world.add(tower);
-    const bell = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 12), mat(PALETTE.gold, PALETTE.gold, 0.3)); bell.position.y = 13; world.add(bell);
     for (const deg of [30, 150]) {
       const a = (deg * Math.PI) / 180, len = Math.hypot(6, 3);
       const ramp = new THREE.Mesh(new THREE.BoxGeometry(len, 0.3, 3), mat(PALETTE.wood));
@@ -97,6 +97,7 @@ function buildWorld(n) {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(pad.r, pad.r, 0.15, 24), mat(PALETTE.gold, PALETTE.gold, 0.8));
     m.position.set(pad.pos[0], pad.pos[1] + 0.08, pad.pos[2]); world.add(m);
   }
+  decorAnim = buildDecor(n, world, PALETTE);
   scene.add(world);
 }
 
@@ -115,19 +116,22 @@ function makePlayer() {
 }
 function makeLantern() {
   const g = new THREE.Group();
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 3.2, 8), mat(PALETTE.wood)); post.position.y = 1.6;
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), mat(PALETTE.lanternOff, PALETTE.lanternLit, 0)); body.scale.y = 1.3; body.position.y = 3.6;
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 10), mat(PALETTE.lanternCore, PALETTE.lanternCore, 0)); core.position.y = 3.6;
-  const light = new THREE.PointLight(0xffa040, 0, 26, 1.2); light.position.y = 3.6;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 0.5, 8), mat(0x8c8494)); base.position.y = 0.25;
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 4.2, 8), mat(PALETTE.wood)); post.position.y = 2.1;
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.14, 0.14), mat(PALETTE.wood)); arm.position.y = LH + 1.05;
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.6, 8), mat(0x8a3b2e)); cap.position.y = LH + 1.35;
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.95, 18, 14), mat(PALETTE.lanternOff, PALETTE.lanternLit, 0)); body.scale.y = 1.3; body.position.y = LH;
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.4, 12, 10), mat(PALETTE.lanternCore, PALETTE.lanternCore, 0)); core.position.y = LH;
+  const light = new THREE.PointLight(0xffa040, 0, 28, 1.2); light.position.y = LH;
   const ring = new THREE.Mesh(new THREE.RingGeometry(T.safe_radius - 0.15, T.safe_radius, 48),
     new THREE.MeshBasicMaterial({ color: PALETTE.lanternLit, transparent: true, opacity: 0, side: THREE.DoubleSide }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
   const barBg = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.18), new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.DoubleSide }));
   const bar = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.18), new THREE.MeshBasicMaterial({ color: PALETTE.lanternLit, side: THREE.DoubleSide }));
-  barBg.position.y = 5; bar.position.set(0, 5, 0.01);
+  barBg.position.y = LH + 1.9; bar.position.set(0, LH + 1.9, 0.01);
   const tear = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.9, 0.05), mat(0x111111)); // torn paper (unlit, colour-independent)
-  tear.position.set(0.2, 3.5, 0.68); tear.rotation.z = 0.5;
-  g.add(post, body, core, light, ring, barBg, bar, tear);
+  tear.position.set(0.25, LH - 0.15, 0.92); tear.rotation.z = 0.5;
+  g.add(base, post, arm, cap, body, core, light, ring, barBg, bar, tear);
   g.userData = { body, core, light, ring, bar, barBg, tear };
   return g;
 }
@@ -426,7 +430,7 @@ function sync(t) {
     u.bar.material.color.set(low ? dangerColor() : '#FFB347');
     u.bar.lookAt(camera.position); u.barBg.lookAt(camera.position);
     if (blinkOff) { u.body.material.emissiveIntensity *= 0.2; u.light.intensity *= 0.2; }
-    u.body.scale.set(1, l.lit ? 1.3 : 1.04, 1); u.body.position.y = l.lit ? 3.6 : 3.35; // unlit: collapsed 20%
+    u.body.scale.set(1, l.lit ? 1.3 : 1.04, 1); u.body.position.y = l.lit ? LH : LH - 0.3; // unlit: collapsed 20%
     u.tear.visible = !l.lit;
   }
   ambient.intensity = 0.15 + 0.55 * (lit / game.lanterns.length); // standard formula
@@ -458,7 +462,7 @@ function hud(t) {
   arrow.style.display = 'none';
   if (unlit.length) {
     const tgt = unlit.reduce((a, b) => (Math.hypot(a.pos[0] - p.pos[0], a.pos[2] - p.pos[2]) < Math.hypot(b.pos[0] - p.pos[0], b.pos[2] - p.pos[2]) ? a : b));
-    const v = new THREE.Vector3(tgt.pos[0], tgt.pos[1] + 3.6, tgt.pos[2]).project(camera);
+    const v = new THREE.Vector3(tgt.pos[0], tgt.pos[1] + LH, tgt.pos[2]).project(camera);
     const off = v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1;
     if (off) {
       let x = v.x, y = v.y;
@@ -584,6 +588,7 @@ function frame(now) {
     }
   }
   const t = now / 1000;
+  if (decorAnim) decorAnim(t);
   if (game) {
     sync(t); hud(t);
     $('hud').style.display = ui === 'menu' || ui === 'dawn' ? 'none' : 'block';
