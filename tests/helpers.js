@@ -45,4 +45,4 @@ export function runHeadless({ seed = 1, ticks = 60, scenario, inputs, every, ext
 }
 
 // An empty, quiet world: no random motes/shades.
-export const quiet = (extra = {}) => ({ random_motes: false, random_shades: false, motes: [], shades: [], ...extra });
+export const quiet = (extra = {}) => ({ random_motes: false, random_shades: false, random_drifters: false, motes: [], shades: [], ...extra });

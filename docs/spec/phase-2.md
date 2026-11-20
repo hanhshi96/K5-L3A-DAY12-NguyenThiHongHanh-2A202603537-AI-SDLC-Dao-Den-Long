@@ -27,7 +27,7 @@ Lý do sửa test: yêu cầu của khách hàng đã thay đổi. Mỗi test đ
 |---|---|---|
 | G1 | Tăng tốc | Tức thời (0 s ≤ 0.1 s). Trên không điều khiển như dưới đất. |
 | G2 | Hướng nhân vật | Là hướng di chuyển khác 0 gần nhất; ban đầu là +Z. |
-| G3 | Lướt | 12 tick × 14 m/s theo hướng move (hoặc hướng nhân vật); bỏ qua input move; trên không thì giữ nguyên Y (không tính trọng lực). Hồi chiêu 90 tick tính từ tick bắt đầu lướt. Sau khi lướt từ bục nhảy, tiếp tục với vận tốc phóng. |
+| G3 | Lướt | 12 tick × 14 m/s theo hướng move (hoặc hướng nhân vật); bỏ qua input move; trên không thì giữ nguyên Y (không tính trọng lực); lướt xong thì tiếp tục chuyển động thẳng đứng như trước khi lướt. Hồi chiêu 90 tick tính từ tick bắt đầu lướt. Sau khi lướt từ bục nhảy, tiếp tục với vận tốc phóng. |
 | G4 | Trạng thái `spawning` | Bóng Mực sinh theo lịch ở `spawning` 60 tick: đứng yên, không gây sát thương. Bóng Mực trong scenario hoạt động ngay (`wander`), trừ khi scenario ghi `state`. |
 | G5 | Chênh cao khi chạm | So `player.pos.y` (chân) với `shade.pos.y` (tâm). Bóng Mực bay ở độ cao mặt đất bên dưới + 1 m và đi xuyên vách tầng (chúng là sương mực). |
 | G6 | Lang thang | Bóng Mực lang thang với tốc độ 50% tới một điểm ngẫu nhiên (theo seed) trên đảo. |

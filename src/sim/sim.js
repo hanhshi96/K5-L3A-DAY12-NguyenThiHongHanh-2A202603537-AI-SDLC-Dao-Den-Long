@@ -270,11 +270,13 @@ export function step(g, input) {
     const gn = ground(g, nx, nz);
     if (!(gn !== null && gn > p.pos[1] + R.step_up)) { p.pos[0] = nx; p.pos[2] = nz; } else { vx = 0; vz = 0; }
     if (!(p.dashTicks > 0 && !p.grounded)) { // dash in the air keeps altitude
-      p.vy -= R.gravity / TICK_RATE;
-      p.pos[1] += p.vy / TICK_RATE;
+      // exact integration for constant gravity (apex = v²/2g, flight = 2v/g)
+      const dt = 1 / TICK_RATE;
+      p.pos[1] += p.vy * dt - 0.5 * R.gravity * dt * dt;
+      p.vy -= R.gravity * dt;
     }
     const gh = ground(g, p.pos[0], p.pos[2]);
-    if (gh !== null && p.pos[1] <= gh && p.vy <= 0 && gh <= p.pos[1] + R.step_up + 1) {
+    if (gh !== null && p.pos[1] <= gh + 1e-9 && p.vy <= 0 && gh <= p.pos[1] + R.step_up + 1) {
       p.pos[1] = gh; p.vy = 0; p.grounded = true; p.launch = null;
     } else p.grounded = false;
     if (p.grounded) {
