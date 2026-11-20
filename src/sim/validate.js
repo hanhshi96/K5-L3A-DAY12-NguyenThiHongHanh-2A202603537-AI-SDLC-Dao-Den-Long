@@ -1,6 +1,6 @@
 // Strict validation of inputs/scenario files. Any problem -> FormatError (exit code 2).
 export class FormatError extends Error {}
-const SHADE_STATES = ['spawning', 'wander', 'chase', 'recoil', 'stunned'];
+const SHADE_STATES = ['spawning', 'wander', 'chase', 'recoil', 'stunned', 'drain'];
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -37,7 +37,7 @@ export function validateScenario(doc) {
     if ('pos' in p) need(isVec3(p.pos), 'scenario: player.pos must be [x,y,z]');
     if ('carried' in p) need(isInt(p.carried) && p.carried >= 0, 'scenario: player.carried must be int >= 0');
     if ('flames' in p) need(isInt(p.flames) && p.flames >= 0, 'scenario: player.flames must be int >= 0');
-    for (const k of ['invuln_ticks', 'dash_cd_ticks', 'pulse_cd_ticks', 'charm_ticks']) {
+    for (const k of ['invuln_ticks', 'dash_cd_ticks', 'pulse_cd_ticks', 'charm_ticks', 'successful_lights']) {
       if (k in p) need(isInt(p[k]) && p[k] >= 0, `scenario: player.${k} must be int >= 0`);
     }
   }
@@ -58,6 +58,7 @@ export function validateScenario(doc) {
         ids.add(s.id);
       }
       if ('state' in s) need(SHADE_STATES.includes(s.state), `scenario: shades[${i}].state must be one of ${SHADE_STATES}`);
+      if ('target_lantern_id' in s) need(typeof s.target_lantern_id === 'string', `scenario: shades[${i}].target_lantern_id must be a string`);
       if ('state_ticks_left' in s) need(isInt(s.state_ticks_left) && s.state_ticks_left >= 0, `scenario: shades[${i}].state_ticks_left must be int >= 0`);
     });
   }
@@ -84,6 +85,8 @@ export function validateScenario(doc) {
       if ('pos' in l) need(isVec3(l.pos), `scenario: lanterns[${i}].pos must be [x,y,z]`);
       if ('deposited' in l) need(isInt(l.deposited) && l.deposited >= 0, `scenario: lanterns[${i}].deposited must be int >= 0`);
       if ('lit' in l) need(typeof l.lit === 'boolean', `scenario: lanterns[${i}].lit must be boolean`);
+      if ('ever_lit' in l) need(typeof l.ever_lit === 'boolean', `scenario: lanterns[${i}].ever_lit must be boolean`);
+      if ('fuel' in l) need(isNum(l.fuel) && l.fuel >= 0 && l.fuel <= 100, `scenario: lanterns[${i}].fuel must be in [0,100]`);
     });
   }
   if ('time_left_s' in doc) need(isNum(doc.time_left_s) && doc.time_left_s > 0, 'scenario: time_left_s must be > 0');

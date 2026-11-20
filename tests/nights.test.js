@@ -13,11 +13,11 @@ test('Night 2/3 setup: lanterns, durations, start, night field, night_start', ()
   const s2 = n2.snapAt(0);
   assert.deepEqual(n2.lines[0].data, { night: 2 });
   assert.equal(s2.night, 2);
-  assert.equal(s2.time_left_s, 330);
+  assert.equal(s2.time_left_s, 270); // P3: was 330
   assert.deepEqual(s2.lanterns.map((l) => [l.id, l.pos]), [
     ['L1', [0, 0, 20]], ['L2', [17, 0, -10]], ['L3', [-17, 0, -10]], ['L4', [70, 0, 20]], ['L5', [87, 0, -10]], ['L6', [53, 0, -10]]]);
   const s3 = runHeadless({ ticks: 0, extraArgs: night(3) }).snapAt(0);
-  assert.equal(s3.time_left_s, 360);
+  assert.equal(s3.time_left_s, 300); // P3: was 360
   assert.deepEqual(s3.player.pos, [0, 0, -30]); // spec G11
   assert.deepEqual(s3.lanterns.map((l) => l.pos), [
     [0, 6, 6], [18, 3, 10], [-18, 3, 10], [35, 0, -10], [-35, 0, -10], [20, 0, -35], [-20, 0, -35]]);

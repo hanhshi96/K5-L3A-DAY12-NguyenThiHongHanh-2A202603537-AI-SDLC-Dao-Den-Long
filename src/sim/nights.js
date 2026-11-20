@@ -32,7 +32,7 @@ function toward(from, to, speed) {
 
 export const NIGHTS = {
   1: {
-    name: 'Đảo Bến', duration_s: 300, start: [0, 0, 0], shade_speed: 4, shade_every: 480, shade_max: 6,
+    name: 'Đảo Bến', duration_s: 240, start: [0, 0, 0], shade_speed: 4, shade_every: 480, shade_max: 6,
     drifters: false, wind: false,
     lanterns: [[0, 0, 25], [23.8, 0, 7.7], [14.7, 0, -20.2], [-14.7, 0, -20.2], [-23.8, 0, 7.7]],
     motePoints: [...ring(12, 0, 45, 8), ...ring(33, 0, 22.5, 16)],
@@ -41,7 +41,7 @@ export const NIGHTS = {
     ground: (x, z) => (Math.hypot(x, z) <= 40 ? 0 : null),
   },
   2: {
-    name: 'Đảo Cau', duration_s: 330, start: [0, 0, 0], shade_speed: 4, shade_every: 420, shade_max: 8,
+    name: 'Đảo Cau', duration_s: 270, start: [0, 0, 0], shade_speed: 4, shade_every: 420, shade_max: 8,
     drifters: true, wind: false,
     lanterns: [[0, 0, 20], [17, 0, -10], [-17, 0, -10], [70, 0, 20], [87, 0, -10], [53, 0, -10]],
     motePoints: [0, 70].flatMap((cx) => [...ring(10, 0, 90, 4, 0, cx), ...ring(22, 0, 45, 8, 0, cx)]),
@@ -55,7 +55,7 @@ export const NIGHTS = {
       Math.hypot(x, z) <= 28 || Math.hypot(x - 70, z) <= 28 || (x >= 26 && x <= 44 && z >= -2 && z <= 2) ? 0 : null,
   },
   3: {
-    name: 'Đảo Chuông', duration_s: 360, start: [0, 0, -30], shade_speed: 4.5, shade_every: 360, shade_max: 10,
+    name: 'Đảo Chuông', duration_s: 300, start: [0, 0, -30], shade_speed: 4.5, shade_every: 360, shade_max: 10,
     drifters: true, wind: true,
     lanterns: [[0, 6, 6], [18, 3, 10], [-18, 3, 10], [35, 0, -10], [-35, 0, -10], [20, 0, -35], [-20, 0, -35]],
     motePoints: [...ring(34, 0, 20, 18, 0), ...ring(18, 20, 20, 8, 3), ...ring(5, 45, 90, 4, 6)],

@@ -8,16 +8,18 @@ import { TUNING } from '../src/sim/sim.js';
 const near = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) <= eps, `${a} != ${b}`);
 const named = (r, n) => r.events.filter((e) => e.name === n);
 
-test('game.contract.json is v1.1 and mirrors the standard numbers', () => {
-  assert.equal(contract.contract_version, '1.1'); // P2: was 1.0
+test('game.contract.json is v1.2 and mirrors the standard numbers', () => {
+  assert.equal(contract.contract_version, '1.2'); // P3: was 1.1 (P2: was 1.0)
   assert.deepEqual(contract.tuning, TUNING);
   // P2: standard numbers from Ticket-02 Part 1
   const std = { player_speed: 6, carry_capacity: 10, lantern_cost: 10, pickup_radius: 1, interact_radius: 2,
     pulse_cost: 3, pulse_radius: 5, pulse_cooldown_s: 3, pulse_stun_s: 2, pulse_push_m: 4, safe_radius: 6,
-    shade_speed: 4, shade_hit_radius: 1, invuln_s: 1.5, flames: 3, night1_duration_s: 300, night2_duration_s: 330,
-    night3_duration_s: 360, dash_speed: 14, dash_duration_s: 0.2, dash_cooldown_s: 1.5, fall_enabled: true, lantern_count_night1: 5 };
+    shade_speed: 4, shade_hit_radius: 1, invuln_s: 1.5, flames: 3, night1_duration_s: 240, night2_duration_s: 270, // P3: 240/270/300
+    night3_duration_s: 300, fuel_max: 100, fuel_decay_per_s: 1, fuel_per_mote: 10, relight_cost: 5, win_ratio: 0.6,
+    drain_per_s: 5, low_fuel_threshold: 30, capacity_max: 20, dash_speed: 14, dash_duration_s: 0.2, dash_cooldown_s: 1.5, fall_enabled: true, lantern_count_night1: 5 };
   for (const [k, v] of Object.entries(std)) assert.equal(T[k], v, k);
-  assert.deepEqual(T.score, { per_mote: 10, per_lantern: 100, per_stun: 5, per_second_left: 2, per_flame_left: 50 });
+  // P3: +5 per mote deposited, time bonus removed
+  assert.deepEqual(T.score, { per_mote: 5, per_lantern: 100, per_stun: 5, per_second_left: 0, per_flame_left: 50 });
 });
 
 test('tick 0 snapshot = state after scenario, before input; night_start at tick 0', () => {
@@ -85,7 +87,7 @@ test('deposit: one lantern per press, min(carried, missing); +10 per mote deposi
   assert.equal(dep.length, 1);
   assert.equal(dep[0].tick, 4);
   assert.deepEqual(dep[0].data, { lantern_id: 'L1', amount: 6, deposited: 10 });
-  assert.deepEqual(named(r, 'lantern_lit')[0].data, { lantern_id: 'L1' });
+  assert.deepEqual(named(r, 'lantern_lit')[0].data, { lantern_id: 'L1', relight: false }); // P3: relight field
   assert.equal(r.end.score, 6 * T.score.per_mote + T.score.per_lantern); // P2
   assert.equal(r.snapAt(10).player.carried, 4);
 });
@@ -99,14 +101,14 @@ test('interact: nearest unlit lantern, tie -> smaller id; out of range does noth
   assert.equal(named(far, 'deposit').length, 0);
 });
 
-test('lighting the last lantern wins with bonus', () => {
-  const sc = quiet({ player: { carried: T.lantern_cost, flames: 2 }, time_left_s: 100,
-    lanterns: ['L2', 'L3', 'L4', 'L5'].map((id) => ({ id, lit: true })).concat([{ id: 'L1', pos: [0, 0, 1] }]) });
+// P3: REPLACED "lighting the last lantern wins with bonus" — Ticket-03 removed the early win (all_lit).
+// The new win rule (dawn_survived) is tested in tests/phase3.test.js.
+test('P3: lighting every lantern does not end the night', () => {
+  const sc = quiet({ player: { carried: T.lantern_cost }, lanterns: ['L2', 'L3', 'L4', 'L5'].map((id) => ({ id, lit: true })).concat([{ id: 'L1', pos: [0, 0, 1] }]) });
   const r = runHeadless({ ticks: 100, scenario: sc, inputs: { frames: [{ tick: 0, interact: true }] } });
-  assert.deepEqual(r.events.at(-1).data, { result: 'won', reason: 'all_lit' });
-  const timeLeft = Math.floor(100 - 1 / 60);
-  assert.deepEqual(r.end, { type: 'end', ticks: 1, state: 'won',
-    score: T.lantern_cost * T.score.per_mote + T.score.per_lantern + timeLeft * T.score.per_second_left + 2 * T.score.per_flame_left });
+  assert.equal(named(r, 'lantern_lit').length, 1);
+  assert.equal(named(r, 'game_over').length, 0);
+  assert.equal(r.end.state, 'playing');
 });
 
 test('pulse: 3D radius from feet+0.8, cost, +5 per shade, push 4 m over 15 ticks, cooldown 3 s', () => {
