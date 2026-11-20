@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Headless runner — Test Contract v1.0.
-// node src/headless.js --seed <int> --night 1 [--scenario f] [--inputs f] --ticks <int> --out f.jsonl [--snapshot-every n]
+// Headless runner — Test Contract v1.1.
+// node src/headless.js --seed <int> --night 1|2|3 [--scenario f] [--inputs f] --ticks <int> --out f.jsonl [--snapshot-every n]
 import fs from 'node:fs';
 import { createGame, step, snapshot, ScenarioError } from './sim/sim.js';
 import { validateInputs, validateScenario, FormatError } from './sim/validate.js';
@@ -35,7 +35,7 @@ function parseArgs(argv) {
     out: a.out,
   };
   if (!opts.out) fail('--out is required', 1);
-  if (opts.night !== 1) fail(`night ${opts.night} not supported (only 1)`, 1);
+  if (![1, 2, 3].includes(opts.night)) fail(`night ${opts.night} not supported (1, 2, 3)`, 1);
   if (opts.ticks < 0) fail('--ticks must be >= 0', 1);
   if (opts.every < 1) fail('--snapshot-every must be >= 1', 1);
   return opts;
@@ -56,16 +56,17 @@ export function run(opts) {
   const scenario = opts.scenario ? readJson(opts.scenario, validateScenario) : null;
   const inputsDoc = opts.inputs ? readJson(opts.inputs, validateInputs) : { frames: [] };
   let g;
-  try { g = createGame({ seed: opts.seed, scenario }); } catch (e) {
+  try { g = createGame({ seed: opts.seed, night: opts.night, scenario }); } catch (e) {
     if (e instanceof ScenarioError) fail(e.message, 2);
     throw e;
   }
-  const lines = [JSON.stringify(snapshot(g))];
-  const input = { move: [0, 0], cam_yaw_deg: 0, jump: false, interact: false, pulse: false, dash: false };
+  // night_start is emitted at tick 0, before the tick-0 snapshot (spec G20).
+  const lines = [JSON.stringify({ type: 'event', tick: 0, name: 'night_start', data: { night: opts.night } }), JSON.stringify(snapshot(g))];
+  const input = { move: [0, 0], cam_yaw_deg: 0, jump: false, interact: false, pulse: false, dash: false, pause: false };
   const frames = inputsDoc.frames;
   let fi = 0;
   let k = 0;
-  for (; k < opts.ticks && g.state === 'playing'; k++) {
+  for (; k < opts.ticks && (g.state === 'playing' || g.state === 'paused'); k++) {
     while (fi < frames.length && frames[fi].tick <= k) {
       const f = frames[fi++];
       for (const key of Object.keys(input)) if (key in f) input[key] = f[key];

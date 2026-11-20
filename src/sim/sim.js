@@ -1,52 +1,60 @@
 // Đảo Đèn Lồng — deterministic game simulation (pure JS, no DOM).
-// Shared by the 3D web client and the headless runner (Test Contract v1.0).
-// 1 tick = 1/60 s. Y is up. Ground at Y = 0. Distances are measured on XZ.
+// Shared by the 3D web client and the headless runner (Test Contract v1.1).
+// 1 tick = 1/60 s. Y is up. Distances on XZ unless stated. Tick order follows Ticket-02.
+import { NIGHTS, angPoint } from './nights.js';
 
 export const TICK_RATE = 60;
 
-// Single source of truth for tuning; game.contract.json must mirror this
-// (tests/contract.test.js checks they are identical).
+// Standard numbers (Ticket-02 Part 1). game.contract.json mirrors this (tested).
 export const TUNING = {
   player_speed: 6,
   carry_capacity: 10,
-  lantern_cost: 5,
+  lantern_cost: 10,
   lantern_count_night1: 5,
-  pickup_radius: 1.2,
-  interact_radius: 2.5,
-  pulse_cost: 2,
-  pulse_radius: 6,
+  pickup_radius: 1,
+  interact_radius: 2,
+  pulse_cost: 3,
+  pulse_radius: 5,
   night1_duration_s: 300,
   flames: 3,
   invuln_s: 1.5,
   hit_drop_ratio: 0.5,
-  pulse_stun_s: 3,
+  pulse_stun_s: 2,
   pulse_push_m: 4,
-  pulse_cooldown_s: 1,
-  safe_radius: 5,
-  shade_speed: 3.5,
+  pulse_cooldown_s: 3,
+  safe_radius: 6,
+  shade_speed: 4,
   shade_hit_radius: 1,
-  fall_enabled: false,
-  score: { per_mote: 10, per_lantern: 100, per_stun: 25, per_second_left: 2, per_flame_left: 50 },
+  fall_enabled: true,
+  score: { per_mote: 10, per_lantern: 100, per_stun: 5, per_second_left: 2, per_flame_left: 50 },
+  dash_speed: 14,
+  dash_duration_s: 0.2,
+  dash_cooldown_s: 1.5,
+  night2_duration_s: 330,
+  night3_duration_s: 360,
 };
 
-// Non-contract constants (game design choices, documented in README).
-export const WORLD = {
-  island_radius: 40,
-  lantern_ring_radius: 22,
-  jump_speed: 6,
-  gravity: 20,
-  shade_y: 1,
-  shade_chase_range: 15,
-  shade_wander_factor: 0.5,
-  initial_shades: 3,
-  max_shades: 6,
-  shade_spawn_every_s: 30,
-  initial_motes: 40,
-  mote_min_active: 20,
-  mote_respawn_every_s: 2,
+// Other standard rules from Ticket-02 (not contract keys).
+export const RULES = {
+  jump_speed: 7, gravity: 20, step_up: 0.3, height_tol: 1.5,
+  charm_speed: 7.2, charm_ticks: 600, charm_respawn_ticks: 2700,
+  shade_detect: 12, shade_lose: 18, shade_hover: 1, shade_wander_factor: 0.5,
+  spawning_ticks: 60, recoil_m: 2, recoil_ticks: 60, push_ticks: 15, safe_push_per_tick: 0.2,
+  pulse_center_h: 0.8, dropped_ttl: 480, drop_ring: [1.5, 2.5],
+  fall_y: -10, fall_wait: 60, respawn_invuln: 90,
+  mote_initial: 20, mote_cap: 30, mote_every: 240,
+  shade_first_tick: 300, shade_first_count: 2, shade_min_player_dist: 15,
+  drifter_speed: 7, drifter_idle_speed: 2, drifter_max: 2, drifter_every: 1200,
+  drifter_chase_carried: 5, drifter_chase_range: 15, drifter_touch: 1.2, drifter_steal_max: 3,
+  drifter_flee_ticks: 240, drifter_drop_flee_ticks: 120, drifter_hover: 1.5,
+  wind_every: 1800, wind_ticks: 300, wind_speed: 2,
 };
 
-// ---------- deterministic RNG (mulberry32) ----------
+const T = TUNING, R = RULES;
+const ticks = (s) => Math.round(s * TICK_RATE);
+const distXZ = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+const lanternNum = (id) => parseInt(id.slice(1), 10);
+
 export function makeRng(seed) {
   let a = seed >>> 0;
   return function rng() {
@@ -58,285 +66,442 @@ export function makeRng(seed) {
   };
 }
 
-const distXZ = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
-
 export class ScenarioError extends Error {}
 
-// ---------- world construction ----------
-function defaultLanterns() {
-  const out = [];
-  for (let i = 0; i < TUNING.lantern_count_night1; i++) {
-    const ang = (i * 2 * Math.PI) / TUNING.lantern_count_night1;
-    const r = WORLD.lantern_ring_radius;
-    out.push({
-      id: `L${i + 1}`,
-      pos: [Math.round(r * Math.sin(ang) * 1000) / 1000, 0, Math.round(r * Math.cos(ang) * 1000) / 1000],
-      deposited: 0,
-      lit: false,
-    });
-  }
-  return out;
-}
-
-export function createGame({ seed = 0, scenario = null } = {}) {
-  const g = {
-    rng: makeRng(seed),
-    tick: 0,
-    state: 'playing',
-    score: 0,
-    timeLeftTicks: TUNING.night1_duration_s * TICK_RATE,
-    player: { pos: [0, 0, 0], vy: 0, flames: TUNING.flames, carried: 0, invuln: 0, pulseCd: 0 },
-    lanterns: defaultLanterns(),
-    shades: [],
-    motes: [],
-    nextMote: 1,
-    nextShade: 1,
-    randomMotes: true,
-    randomShades: true,
-    prevInput: { jump: false, interact: false, pulse: false, dash: false },
-    events: [],
-    result: null,
-  };
-
+// ---------- construction ----------
+export function createGame({ seed = 0, night = 1, scenario = null } = {}) {
+  const N = NIGHTS[night];
+  if (!N) throw new ScenarioError(`unknown night ${night}`);
   const sc = scenario || {};
-  if (sc.random_motes !== undefined) g.randomMotes = sc.random_motes;
-  if (sc.random_shades !== undefined) g.randomShades = sc.random_shades;
-
+  const g = {
+    seed, night, N, rng: makeRng(seed),
+    tick: 0, simTick: 0, state: 'playing', paused: false, score: 0,
+    timeLeftTicks: ticks(N.duration_s),
+    player: {
+      pos: N.start.slice(), vy: 0, vel: [0, 0, 0], grounded: true, facing: [0, 1],
+      flames: T.flames, carried: 0, invuln: 0, pulseCd: 0, dashCd: 0, dashTicks: 0, dashDir: [0, 1],
+      charm: 0, launch: null, fallWait: 0,
+    },
+    lanterns: N.lanterns.map((p, i) => ({ id: `L${i + 1}`, pos: p.slice(), deposited: 0, lit: false })),
+    shades: [], motes: [], drifters: [], charms: [],
+    nextMote: 1, nextShade: 1, nextDrifter: 1,
+    randomMotes: sc.random_motes ?? true,
+    randomShades: sc.random_shades ?? true,
+    randomDrifters: (sc.random_drifters ?? true) && N.drifters,
+    windEnabled: (sc.wind_enabled ?? true) && N.wind,
+    prevInput: { jump: false, interact: false, pulse: false, dash: false, pause: false },
+    events: [],
+  };
+  const p = g.player;
   if (sc.player) {
-    if (sc.player.pos) g.player.pos = sc.player.pos.slice();
-    if (sc.player.carried !== undefined) g.player.carried = sc.player.carried;
-    if (sc.player.flames !== undefined) g.player.flames = sc.player.flames;
+    const sp = sc.player;
+    if (sp.pos) p.pos = sp.pos.slice();
+    if (sp.carried !== undefined) p.carried = sp.carried;
+    if (sp.flames !== undefined) p.flames = sp.flames;
+    if (sp.invuln_ticks !== undefined) p.invuln = sp.invuln_ticks;
+    if (sp.dash_cd_ticks !== undefined) p.dashCd = sp.dash_cd_ticks;
+    if (sp.pulse_cd_ticks !== undefined) p.pulseCd = sp.pulse_cd_ticks;
+    if (sp.charm_ticks !== undefined) p.charm = sp.charm_ticks;
   }
-  if (sc.time_left_s !== undefined) g.timeLeftTicks = Math.round(sc.time_left_s * TICK_RATE);
+  const g0 = ground(g, p.pos[0], p.pos[2]);
+  p.grounded = g0 !== null && Math.abs(p.pos[1] - g0) < 1e-9;
+  if (sc.time_left_s !== undefined) g.timeLeftTicks = ticks(sc.time_left_s);
 
   if (sc.lanterns) {
     for (const l of sc.lanterns) {
       const t = g.lanterns.find((x) => x.id === l.id);
-      if (!t) throw new ScenarioError(`unknown lantern id ${l.id}`);
+      if (!t) throw new ScenarioError(`unknown lantern id ${l.id} for night ${night}`);
       if (l.pos) t.pos = l.pos.slice();
       if (l.deposited !== undefined) t.deposited = l.deposited;
       if (l.lit !== undefined) t.lit = l.lit;
-      if (t.lit && l.deposited === undefined) t.deposited = TUNING.lantern_cost;
-      if (t.deposited >= TUNING.lantern_cost) t.lit = true;
+      if (t.lit && l.deposited === undefined) t.deposited = T.lantern_cost;
+      if (t.deposited >= T.lantern_cost) t.lit = true;
     }
   }
 
-  // Motes: scenario list replaces the default list.
-  if (sc.motes) {
-    for (const p of sc.motes) g.motes.push({ id: `M${g.nextMote++}`, pos: p.slice() });
-  } else if (g.randomMotes) {
-    for (let i = 0; i < WORLD.initial_motes; i++) spawnRandomMote(g);
+  if (sc.motes) for (const m of sc.motes) g.motes.push({ id: `M${g.nextMote++}`, pos: m.slice(), kind: 'random', ttl: null, point: -1 });
+  else if (g.randomMotes) {
+    const idx = N.motePoints.map((_, i) => i);
+    for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(g.rng() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+    for (const i of idx.slice(0, R.mote_initial)) addRandomMote(g, i);
   }
 
-  // Shades: scenario list replaces the default list.
   if (sc.shades) {
     const used = new Set(sc.shades.filter((s) => s.id).map((s) => s.id));
     for (const s of sc.shades) {
       let id = s.id;
-      if (!id) {
-        while (used.has(`S${g.nextShade}`)) g.nextShade++;
-        id = `S${g.nextShade++}`;
-        used.add(id);
-      }
-      g.shades.push(makeShade(id, s.pos.slice()));
+      if (!id) { while (used.has(`S${g.nextShade}`)) g.nextShade++; id = `S${g.nextShade++}`; used.add(id); }
+      const sh = makeShade(id, s.pos.slice(), s.state || 'wander');
+      if (s.state_ticks_left !== undefined) sh.stateTicks = s.state_ticks_left;
+      else sh.stateTicks = { spawning: R.spawning_ticks, stunned: ticks(T.pulse_stun_s), recoil: R.recoil_ticks }[sh.state] || 0;
+      g.shades.push(sh);
     }
     g.usedShadeIds = used;
-  } else {
-    g.usedShadeIds = new Set();
-    if (g.randomShades) for (let i = 0; i < WORLD.initial_shades; i++) spawnRandomShade(g, false);
+  } else g.usedShadeIds = new Set();
+
+  if (sc.drifters) {
+    for (const d of sc.drifters) {
+      const id = d.id || `D${g.nextDrifter}`;
+      g.nextDrifter = Math.max(g.nextDrifter, parseInt(id.slice(1), 10) + 1 || g.nextDrifter + 1);
+      g.drifters.push({ id, pos: d.pos.slice(), state: d.state || 'idle', stolen: d.stolen || 0, timer: d.state_ticks_left ?? (d.state === 'flee' ? R.drifter_flee_ticks : 0), target: null });
+    }
   }
+  const charmSrc = sc.charms || N.charms.map((pos) => ({ pos }));
+  charmSrc.forEach((c, i) => g.charms.push({ id: c.id || `C${i + 1}`, pos: c.pos.slice(), available: c.available ?? true, respawn: c.respawn_ticks ?? 0 }));
   return g;
 }
 
-function makeShade(id, pos) {
-  return { id, pos, state: 'wander', stun: 0, target: null };
+function makeShade(id, pos, state = 'wander') {
+  return { id, pos, state, stateTicks: 0, pushTicks: 0, pushDir: [1, 0], target: null };
 }
 
-function randomPointInRing(g, rMin, rMax) {
-  const ang = g.rng() * Math.PI * 2;
-  const r = rMin + g.rng() * (rMax - rMin);
-  return [Math.round(r * Math.cos(ang) * 1000) / 1000, 0, Math.round(r * Math.sin(ang) * 1000) / 1000];
+function addRandomMote(g, pointIdx) {
+  const pt = g.N.motePoints[pointIdx];
+  g.motes.push({ id: `M${g.nextMote++}`, pos: pt.slice(), kind: 'random', ttl: null, point: pointIdx });
 }
 
-function spawnRandomMote(g) {
-  g.motes.push({ id: `M${g.nextMote++}`, pos: randomPointInRing(g, 4, WORLD.island_radius - 2) });
+// ---------- terrain ----------
+export function ground(g, x, z) { return g.N.ground(x, z); }
+function shadeY(g, x, z, hover) {
+  const h = g.N.ground(x, z);
+  return (h === null || h > 6 ? 0 : h) + hover;
 }
-
-function spawnRandomShade(g, emit) {
-  let id;
-  do id = `S${g.nextShade++}`; while (g.usedShadeIds.has(id));
-  g.usedShadeIds.add(id);
-  const p = randomPointInRing(g, 30, WORLD.island_radius - 1);
-  p[1] = WORLD.shade_y;
-  const s = makeShade(id, p);
-  enforceSafe(g, s);
-  g.shades.push(s);
-  if (emit) g.events.push({ type: 'event', tick: g.tick + 1, name: 'shade_spawned', data: { id } });
+function inLitZone(g, pos) {
+  for (const l of g.lanterns) if (l.lit && distXZ(pos, l.pos) < T.safe_radius - 1e-9) return true;
+  return false;
 }
-
-// Shades can never be within safe_radius (distance <= r) of a LIT lantern.
-function enforceSafe(g, s) {
-  const r = TUNING.safe_radius;
+// Keep a moving shade from entering a lit safe zone: project to the 6 m edge.
+function blockSafe(g, s, from) {
   for (const l of g.lanterns) {
     if (!l.lit) continue;
-    const dx = s.pos[0] - l.pos[0];
-    const dz = s.pos[2] - l.pos[2];
-    const d = Math.hypot(dx, dz);
-    if (d <= r + 0.01) {
-      const ux = d > 1e-9 ? dx / d : 1;
-      const uz = d > 1e-9 ? dz / d : 0;
-      s.pos[0] = l.pos[0] + ux * (r + 0.01);
-      s.pos[2] = l.pos[2] + uz * (r + 0.01);
+    const d = distXZ(s.pos, l.pos);
+    if (d < T.safe_radius - 1e-9 && distXZ(from, l.pos) >= T.safe_radius - 1e-9) {
+      const ux = d > 1e-9 ? (s.pos[0] - l.pos[0]) / d : 1, uz = d > 1e-9 ? (s.pos[2] - l.pos[2]) / d : 0;
+      s.pos[0] = l.pos[0] + ux * T.safe_radius; s.pos[2] = l.pos[2] + uz * T.safe_radius;
     }
   }
 }
+function moveToward(e, tx, tz, speed) {
+  const dx = tx - e.pos[0], dz = tz - e.pos[2], d = Math.hypot(dx, dz);
+  const st = Math.min(d, speed / TICK_RATE);
+  if (d > 1e-9) { e.pos[0] += (dx / d) * st; e.pos[2] += (dz / d) * st; }
+  return d;
+}
+function moveAway(e, from, speed) {
+  const dx = e.pos[0] - from[0], dz = e.pos[2] - from[2], d = Math.hypot(dx, dz);
+  const ux = d > 1e-9 ? dx / d : 1, uz = d > 1e-9 ? dz / d : 0;
+  e.pos[0] += (ux * speed) / TICK_RATE; e.pos[2] += (uz * speed) / TICK_RATE;
+}
+
+export function windAt(g, t) {
+  // Gust k (k >= 1) is active on sim ticks [1800k, 1800k + 300). Direction per gust from seed.
+  const k = Math.max(1, Math.floor(t / R.wind_every) + (t % R.wind_every >= R.wind_ticks ? 1 : 0));
+  const active = g.windEnabled && t >= R.wind_every && t % R.wind_every < R.wind_ticks;
+  const dir = makeRng((g.seed ^ Math.imul(k, 0x9e3779b9)) >>> 0)() * 360;
+  return { active, dir_deg: dir, k };
+}
 
 // ---------- step ----------
-// input: { move:[x,z], cam_yaw_deg, jump, interact, pulse, dash }
+// input: { move:[x,z], cam_yaw_deg, jump, interact, pulse, dash, pause }
 export function step(g, input) {
-  if (g.state !== 'playing') return [];
   g.events = [];
-  const T = TUNING;
+  if (g.state !== 'playing' && g.state !== 'paused') return [];
   const next = g.tick + 1;
   const emit = (name, data) => g.events.push({ type: 'event', tick: next, name, data });
-  const p = g.player;
   const rising = (k) => !!input[k] && !g.prevInput[k];
+  const p = g.player;
+  const finish = () => {
+    g.tick = next;
+    g.prevInput = { jump: !!input.jump, interact: !!input.interact, pulse: !!input.pulse, dash: !!input.dash, pause: !!input.pause };
+    return g.events;
+  };
 
-  // 1. movement
-  let [mx, mz] = input.move || [0, 0];
-  const len = Math.hypot(mx, mz);
-  if (len > 1) { mx /= len; mz /= len; }
-  const th = ((input.cam_yaw_deg || 0) * Math.PI) / 180;
-  const wx = mx * Math.cos(th) + mz * Math.sin(th);
-  const wz = -mx * Math.sin(th) + mz * Math.cos(th);
-  p.pos[0] += (wx * T.player_speed) / TICK_RATE;
-  p.pos[2] += (wz * T.player_speed) / TICK_RATE;
-  const pr = Math.hypot(p.pos[0], p.pos[2]);
-  if (pr > WORLD.island_radius) { // fall disabled: island edge is a wall
-    p.pos[0] *= WORLD.island_radius / pr;
-    p.pos[2] *= WORLD.island_radius / pr;
+  // 1. input; pause first
+  if (rising('pause')) {
+    g.paused = !g.paused;
+    g.state = g.paused ? 'paused' : 'playing';
+    emit(g.paused ? 'paused' : 'resumed', {});
   }
-  // jump
-  if (rising('jump') && p.pos[1] <= 0 && p.vy === 0) p.vy = WORLD.jump_speed;
-  if (p.pos[1] > 0 || p.vy > 0) {
-    p.vy -= WORLD.gravity / TICK_RATE;
-    p.pos[1] += p.vy / TICK_RATE;
-    if (p.pos[1] <= 0) { p.pos[1] = 0; p.vy = 0; }
-  }
+  if (g.paused) return finish();
+  const st = g.simTick + 1; // sim tick produced by this step
 
-  // 2. pickup (automatic)
-  for (let i = 0; i < g.motes.length && p.carried < T.carry_capacity; ) {
-    if (distXZ(p.pos, g.motes[i].pos) <= T.pickup_radius) {
-      g.motes.splice(i, 1);
-      p.carried++;
-      g.score += T.score.per_mote;
-      emit('mote_picked', { carried: p.carried });
-    } else i++;
+  // 2. counters
+  g.timeLeftTicks--;
+  for (const k of ['pulseCd', 'dashCd', 'invuln', 'charm', 'dashTicks']) if (p[k] > 0) p[k]--;
+  for (const s of g.shades) if (s.state === 'stunned' && s.stateTicks > 0) s.stateTicks--;
+  for (let i = g.motes.length - 1; i >= 0; i--) {
+    const m = g.motes[i];
+    if (m.ttl !== null && --m.ttl <= 0) g.motes.splice(i, 1);
+  }
+  for (const c of g.charms) if (!c.available && --c.respawn <= 0) { c.available = true; c.respawn = 0; }
+  if (p.fallWait > 0 && --p.fallWait === 0) {
+    p.pos = g.N.start.slice(); p.vy = 0; p.vel = [0, 0, 0]; p.launch = null; p.dashTicks = 0;
+    p.grounded = true; p.invuln = R.respawn_invuln;
   }
 
-  // 3. interact: deposit into nearest unlit lantern in range
-  if (rising('interact') && p.carried > 0) {
+  // 3. move Mây (jump, dash, jump pad, wind), then fall check
+  const wind = windAt(g, st);
+  if (p.fallWait === 0) {
+    let [mx, mz] = input.move || [0, 0];
+    const len = Math.hypot(mx, mz);
+    if (len > 1) { mx /= len; mz /= len; }
+    const th = ((input.cam_yaw_deg || 0) * Math.PI) / 180;
+    const wx = mx * Math.cos(th) + mz * Math.sin(th);
+    const wz = -mx * Math.sin(th) + mz * Math.cos(th);
+    const wl = Math.hypot(wx, wz);
+    if (wl > 1e-9) p.facing = [wx / wl, wz / wl];
+
+    if (rising('jump') && p.grounded) { p.vy = R.jump_speed; p.grounded = false; }
+    if (rising('dash') && p.dashTicks === 0 && (p.dashCd === 0 || p.charm > 0)) {
+      p.dashTicks = ticks(T.dash_duration_s);
+      p.dashDir = wl > 1e-9 ? [wx / wl, wz / wl] : p.facing.slice();
+      p.dashCd = p.charm > 0 ? 0 : ticks(T.dash_cooldown_s);
+      emit('dash', {});
+    }
+    let vx, vz;
+    if (p.dashTicks > 0) { vx = p.dashDir[0] * T.dash_speed; vz = p.dashDir[1] * T.dash_speed; }
+    else if (p.launch) { [vx, vz] = p.launch; }
+    else { const sp = p.charm > 0 ? R.charm_speed : T.player_speed; vx = wx * sp; vz = wz * sp; }
+    if (wind.active) {
+      const a = (wind.dir_deg * Math.PI) / 180;
+      vx += Math.cos(a) * R.wind_speed; vz += Math.sin(a) * R.wind_speed;
+    }
+    const nx = p.pos[0] + vx / TICK_RATE, nz = p.pos[2] + vz / TICK_RATE;
+    const gn = ground(g, nx, nz);
+    if (!(gn !== null && gn > p.pos[1] + R.step_up)) { p.pos[0] = nx; p.pos[2] = nz; } else { vx = 0; vz = 0; }
+    if (!(p.dashTicks > 0 && !p.grounded)) { // dash in the air keeps altitude
+      p.vy -= R.gravity / TICK_RATE;
+      p.pos[1] += p.vy / TICK_RATE;
+    }
+    const gh = ground(g, p.pos[0], p.pos[2]);
+    if (gh !== null && p.pos[1] <= gh && p.vy <= 0 && gh <= p.pos[1] + R.step_up + 1) {
+      p.pos[1] = gh; p.vy = 0; p.grounded = true; p.launch = null;
+    } else p.grounded = false;
+    if (p.grounded) {
+      for (const pad of g.N.pads) {
+        if (distXZ(p.pos, pad.pos) <= pad.r && Math.abs(p.pos[1] - pad.pos[1]) < 0.05) {
+          p.launch = pad.h.slice(); p.vy = pad.vy; p.grounded = false;
+        }
+      }
+    }
+    p.vel = [vx, p.grounded ? 0 : p.vy, vz];
+    if (T.fall_enabled && p.pos[1] < R.fall_y) {
+      p.flames--;
+      const lost = p.carried;
+      p.carried = 0; p.fallWait = R.fall_wait; p.vel = [0, 0, 0]; p.vy = 0; p.launch = null; p.dashTicks = 0;
+      emit('player_hit', { by: 'fall', flames: p.flames, dropped: 0, lost });
+    }
+  }
+
+  // 4. pick up motes and charms
+  if (p.fallWait === 0) {
+    const near = (pos) => distXZ(p.pos, pos) <= T.pickup_radius && Math.abs(p.pos[1] - pos[1]) <= R.height_tol;
+    for (let i = 0; i < g.motes.length && p.carried < T.carry_capacity;) {
+      if (near(g.motes[i].pos)) {
+        g.motes.splice(i, 1);
+        p.carried++;
+        emit('mote_picked', { carried: p.carried });
+      } else i++;
+    }
+    for (const c of g.charms) {
+      if (c.available && near(c.pos)) {
+        c.available = false; c.respawn = R.charm_respawn_ticks; p.charm = R.charm_ticks;
+        emit('charm_picked', { charm_id: c.id, charm_ticks: R.charm_ticks });
+      }
+    }
+  }
+
+  // 5. interact with lanterns
+  if (rising('interact') && p.carried > 0 && p.fallWait === 0) {
     let best = null, bd = Infinity;
     for (const l of g.lanterns) {
       if (l.lit) continue;
       const d = distXZ(p.pos, l.pos);
-      if (d <= T.interact_radius && d < bd) { best = l; bd = d; }
+      if (d <= T.interact_radius && (d < bd || (d === bd && lanternNum(l.id) < lanternNum(best.id)))) { best = l; bd = d; }
     }
     if (best) {
       const amount = Math.min(p.carried, T.lantern_cost - best.deposited);
       p.carried -= amount;
       best.deposited += amount;
+      g.score += amount * T.score.per_mote;
       emit('deposit', { lantern_id: best.id, amount, deposited: best.deposited });
       if (best.deposited >= T.lantern_cost) {
         best.lit = true;
         g.score += T.score.per_lantern;
         emit('lantern_lit', { lantern_id: best.id });
-        for (const s of g.shades) enforceSafe(g, s);
       }
     }
   }
 
-  // 4. pulse
-  if (rising('pulse') && p.pulseCd === 0 && p.carried >= T.pulse_cost) {
+  // 6. safe zones: shades inside a lit zone are pushed out (<= 30 ticks), harmless meanwhile
+  for (const s of g.shades) {
+    for (const l of g.lanterns) {
+      if (!l.lit) continue;
+      const d = distXZ(s.pos, l.pos);
+      if (d < T.safe_radius - 1e-9) {
+        const ux = d > 1e-9 ? (s.pos[0] - l.pos[0]) / d : 1, uz = d > 1e-9 ? (s.pos[2] - l.pos[2]) / d : 0;
+        const nd = Math.min(T.safe_radius, d + R.safe_push_per_tick);
+        s.pos[0] = l.pos[0] + ux * nd; s.pos[2] = l.pos[2] + uz * nd;
+        s.inZone = true;
+      }
+    }
+  }
+
+  // 7. pulse
+  if (rising('pulse') && p.pulseCd === 0 && p.carried >= T.pulse_cost && p.fallWait === 0) {
     p.carried -= T.pulse_cost;
-    p.pulseCd = Math.round(T.pulse_cooldown_s * TICK_RATE);
+    p.pulseCd = ticks(T.pulse_cooldown_s);
+    const c = [p.pos[0], p.pos[1] + R.pulse_center_h, p.pos[2]];
+    const d3 = (e) => Math.hypot(e.pos[0] - c[0], e.pos[1] - c[1], e.pos[2] - c[2]);
     const ids = [];
-    for (const s of g.shades) {
-      const d = distXZ(p.pos, s.pos);
-      if (d > T.pulse_radius) continue;
+    for (const s of [...g.shades].sort(byId)) {
+      if (d3(s) > T.pulse_radius) continue;
       ids.push(s.id);
-      s.state = 'stunned';
-      s.stun = Math.round(T.pulse_stun_s * TICK_RATE);
-      const ux = d > 1e-9 ? (s.pos[0] - p.pos[0]) / d : 1;
-      const uz = d > 1e-9 ? (s.pos[2] - p.pos[2]) / d : 0;
-      s.pos[0] += ux * T.pulse_push_m;
-      s.pos[2] += uz * T.pulse_push_m;
-      enforceSafe(g, s);
+      const dx = s.pos[0] - p.pos[0], dz = s.pos[2] - p.pos[2], d = Math.hypot(dx, dz);
+      s.pushDir = d > 1e-9 ? [dx / d, dz / d] : [1, 0];
+      s.state = 'stunned'; s.stateTicks = ticks(T.pulse_stun_s); s.pushTicks = R.push_ticks;
     }
     g.score += ids.length * T.score.per_stun;
+    for (const d of g.drifters) {
+      if (d3(d) > T.pulse_radius) continue;
+      if (d.state === 'chase') { d.state = 'flee'; d.timer = R.drifter_flee_ticks; }
+      else if (d.state === 'flee' && d.stolen > 0) {
+        const amount = d.stolen;
+        dropMotes(g, d.pos, amount);
+        d.stolen = 0; d.timer = R.drifter_drop_flee_ticks;
+        emit('drifter_drop', { drifter_id: d.id, amount });
+      }
+    }
     emit('pulse', { stunned_ids: ids });
   }
 
-  // 5. shades
-  for (const s of g.shades) {
-    // Stunned for exactly pulse_stun_s*60 ticks (no move, no hit), then resumes.
-    if (s.stun > 0) { s.stun--; continue; }
-    const dp = distXZ(s.pos, p.pos);
-    let tx, tz, speed;
-    if (dp <= WORLD.shade_chase_range) {
-      s.state = 'chase';
-      tx = p.pos[0]; tz = p.pos[2]; speed = T.shade_speed;
-    } else {
+  // 8. move shades and drifters
+  const speed = g.N.shade_speed;
+  for (const s of [...g.shades].sort(byId)) {
+    const from = s.pos.slice();
+    if (s.inZone) { s.inZone = inLitZone(g, s.pos); continue; } // being pushed out this tick
+    if (s.state === 'spawning') { if (--s.stateTicks <= 0) s.state = 'wander'; continue; }
+    if (s.state === 'stunned') {
+      if (s.pushTicks > 0) {
+        s.pos[0] += (s.pushDir[0] * T.pulse_push_m) / R.push_ticks;
+        s.pos[2] += (s.pushDir[1] * T.pulse_push_m) / R.push_ticks;
+        s.pushTicks--;
+        if (inLitZone(g, s.pos) || (g.N.ground(s.pos[0], s.pos[2]) ?? 0) > 6) { s.pos = from; s.pushTicks = 0; }
+      }
+      if (s.stateTicks > 0) continue;
       s.state = 'wander';
-      if (!s.target || distXZ(s.pos, s.target) < 1) s.target = randomPointInRing(g, 5, WORLD.island_radius - 2);
-      tx = s.target[0]; tz = s.target[2]; speed = T.shade_speed * WORLD.shade_wander_factor;
     }
-    const dx = tx - s.pos[0], dz = tz - s.pos[2];
-    const d = Math.hypot(dx, dz);
-    const stepLen = Math.min(d, speed / TICK_RATE);
-    if (d > 1e-9) { s.pos[0] += (dx / d) * stepLen; s.pos[2] += (dz / d) * stepLen; }
-    enforceSafe(g, s);
+    if (s.state === 'recoil') {
+      moveAway(s, p.pos, R.recoil_m / R.recoil_ticks * TICK_RATE);
+      blockSafe(g, s, from);
+      s.pos[1] = shadeY(g, s.pos[0], s.pos[2], R.shade_hover);
+      if (--s.stateTicks <= 0) s.state = 'wander';
+      continue;
+    }
+    const dp = distXZ(s.pos, p.pos);
+    if (s.state === 'chase' && dp > R.shade_lose) s.state = 'wander';
+    else if (s.state === 'wander' && dp <= R.shade_detect) s.state = 'chase';
+    if (s.state === 'chase') moveToward(s, p.pos[0], p.pos[2], speed);
+    else {
+      if (!s.target || distXZ(s.pos, s.target) < 1) s.target = g.N.motePoints[Math.floor(g.rng() * g.N.motePoints.length)];
+      moveToward(s, s.target[0], s.target[2], speed * R.shade_wander_factor);
+    }
+    blockSafe(g, s, from);
+    s.pos[1] = shadeY(g, s.pos[0], s.pos[2], R.shade_hover);
+  }
+  for (const d of g.drifters) {
+    if (d.state === 'removed') continue;
+    const dp = distXZ(d.pos, p.pos);
+    const want = p.carried >= R.drifter_chase_carried && dp <= R.drifter_chase_range;
+    if (d.state === 'idle' && want) d.state = 'chase';
+    else if (d.state === 'chase' && !want) d.state = 'idle';
+    if (d.state === 'chase') moveToward(d, p.pos[0], p.pos[2], R.drifter_speed);
+    else if (d.state === 'idle') {
+      if (!d.target || distXZ(d.pos, d.target) < 1) d.target = g.N.motePoints[Math.floor(g.rng() * g.N.motePoints.length)];
+      moveToward(d, d.target[0], d.target[2], R.drifter_idle_speed);
+    } else if (d.state === 'flee') {
+      moveAway(d, p.pos, R.drifter_speed);
+      if (--d.timer <= 0) d.state = 'removed';
+    }
+    d.pos[1] = shadeY(g, d.pos[0], d.pos[2], R.drifter_hover);
   }
 
-  // 6. hits
-  if (p.invuln > 0) p.invuln--;
-  else {
-    for (const s of g.shades) {
-      if (s.state === 'stunned') continue;
-      if (distXZ(s.pos, p.pos) <= T.shade_hit_radius) {
+  // 9. touch: drifters steal first, then shades hit (ascending id)
+  if (p.fallWait === 0) {
+    for (const d of [...g.drifters].sort(byId)) {
+      if ((d.state === 'idle' || d.state === 'chase') && p.carried > 0 && distXZ(d.pos, p.pos) <= R.drifter_touch) {
+        const amount = Math.min(R.drifter_steal_max, p.carried);
+        p.carried -= amount; d.stolen = amount; d.state = 'flee'; d.timer = R.drifter_flee_ticks;
+        emit('drifter_steal', { drifter_id: d.id, amount, carried: p.carried });
+      }
+    }
+    if (p.invuln === 0) {
+      for (const s of [...g.shades].sort(byId)) {
+        if (s.state !== 'wander' && s.state !== 'chase') continue;
+        if (inLitZone(g, s.pos)) continue;
+        if (distXZ(s.pos, p.pos) > T.shade_hit_radius || Math.abs(s.pos[1] - p.pos[1]) > R.height_tol) continue;
         p.flames--;
         const dropped = Math.floor(p.carried * T.hit_drop_ratio);
         p.carried -= dropped;
-        p.invuln = Math.round(T.invuln_s * TICK_RATE);
+        dropMotes(g, p.pos, dropped);
+        p.invuln = ticks(T.invuln_s);
+        s.state = 'recoil'; s.stateTicks = R.recoil_ticks;
         emit('player_hit', { by: 'shade', flames: p.flames, dropped });
-        break;
+        break; // at most one flame per tick
       }
     }
   }
-  if (p.pulseCd > 0) p.pulseCd--;
 
-  // 7. spawns
-  if (g.randomMotes && next % Math.round(WORLD.mote_respawn_every_s * TICK_RATE) === 0 &&
-      g.motes.length < WORLD.mote_min_active) spawnRandomMote(g);
-  if (g.randomShades && next % Math.round(WORLD.shade_spawn_every_s * TICK_RATE) === 0 &&
-      g.shades.length < WORLD.max_shades) spawnRandomShade(g, true);
+  // 10. spawns (new entities interact from the next tick)
+  if (g.randomMotes && st % R.mote_every === 0 && g.motes.filter((m) => m.kind === 'random').length < R.mote_cap) {
+    const used = new Set(g.motes.map((m) => m.point));
+    const free = g.N.motePoints.map((_, i) => i).filter((i) => !used.has(i));
+    if (free.length) addRandomMote(g, free[Math.floor(g.rng() * free.length)]);
+  }
+  if (g.randomShades && st >= R.shade_first_tick && (st - R.shade_first_tick) % g.N.shade_every === 0) {
+    const n = st === R.shade_first_tick ? R.shade_first_count : 1;
+    for (let i = 0; i < n && g.shades.length < g.N.shade_max; i++) {
+      const pts = g.N.shadePoints.filter((q) => distXZ(q, p.pos) >= R.shade_min_player_dist && !inLitZone(g, q));
+      if (!pts.length) break;
+      const q = pts[Math.floor(g.rng() * pts.length)];
+      let id;
+      do id = `S${g.nextShade++}`; while (g.usedShadeIds.has(id));
+      g.usedShadeIds.add(id);
+      const s = makeShade(id, [q[0], shadeY(g, q[0], q[2], R.shade_hover), q[2]], 'spawning');
+      s.stateTicks = R.spawning_ticks;
+      g.shades.push(s);
+      emit('shade_spawned', { id });
+    }
+  }
+  if (g.randomDrifters && st % R.drifter_every === 0 && g.drifters.filter((d) => d.state !== 'removed').length < R.drifter_max) {
+    const q = g.N.shadePoints[Math.floor(g.rng() * g.N.shadePoints.length)];
+    g.drifters.push({ id: `D${g.nextDrifter++}`, pos: [q[0], shadeY(g, q[0], q[2], R.drifter_hover), q[2]], state: 'idle', stolen: 0, timer: 0, target: null });
+  }
 
-  // 8. time & end conditions
-  g.timeLeftTicks--;
-  g.tick = next;
-  g.prevInput = { jump: !!input.jump, interact: !!input.interact, pulse: !!input.pulse, dash: !!input.dash };
-  if (g.lanterns.every((l) => l.lit)) {
-    g.score += Math.floor(Math.max(0, g.timeLeftTicks) / TICK_RATE) * T.score.per_second_left +
-               p.flames * T.score.per_flame_left;
+  // 11. win / lose
+  g.simTick = st;
+  if (p.flames <= 0) end(g, 'lost', 'no_flames', emit);
+  else if (g.lanterns.every((l) => l.lit)) {
+    g.score += Math.floor(Math.max(0, g.timeLeftTicks) / TICK_RATE) * T.score.per_second_left + p.flames * T.score.per_flame_left;
     end(g, 'won', 'all_lit', emit);
-  } else if (p.flames <= 0) end(g, 'lost', 'no_flames', emit);
-  else if (g.timeLeftTicks <= 0) end(g, 'lost', 'dawn', emit);
-  return g.events;
+  } else if (g.timeLeftTicks <= 0) end(g, 'lost', 'dawn', emit);
+  return finish();
+}
+
+const byId = (a, b) => parseInt(a.id.slice(1), 10) - parseInt(b.id.slice(1), 10);
+
+function dropMotes(g, at, n) {
+  for (let i = 0; i < n; i++) {
+    const a = ((i / n) + g.rng() * 0.1) * Math.PI * 2;
+    const r = R.drop_ring[0] + g.rng() * (R.drop_ring[1] - R.drop_ring[0]);
+    const x = at[0] + Math.cos(a) * r, z = at[2] + Math.sin(a) * r;
+    const h = g.N.ground(x, z);
+    g.motes.push({ id: `M${g.nextMote++}`, pos: [x, h === null || h > 6 ? at[1] : h, z], kind: 'dropped', ttl: R.dropped_ttl, point: -1 });
+  }
 }
 
 function end(g, result, reason, emit) {
   g.state = result;
-  g.result = { result, reason };
   emit('game_over', { result, reason });
 }
 
@@ -345,17 +510,30 @@ const r3 = (v) => Math.round(v * 1000) / 1000 + 0;
 const v3 = (p) => p.map(r3);
 
 export function snapshot(g) {
+  const p = g.player;
+  const w = windAt(g, g.simTick);
   return {
     type: 'snapshot',
     tick: g.tick,
-    sim_tick: g.tick,
+    sim_tick: g.simTick,
+    night: g.night,
     state: g.state,
     time_left_s: r3(g.timeLeftTicks / TICK_RATE),
     score: g.score,
-    player: { pos: v3(g.player.pos), flames: g.player.flames, carried: g.player.carried },
+    player: {
+      pos: v3(p.pos), vel: v3(p.vel), grounded: p.grounded, flames: p.flames, carried: p.carried,
+      invuln: p.invuln > 0, dash_cd_s: r3(p.dashCd / TICK_RATE), pulse_cd_s: r3(p.pulseCd / TICK_RATE), charm_s: r3(p.charm / TICK_RATE),
+    },
     lanterns: g.lanterns.map((l) => ({ id: l.id, pos: v3(l.pos), lit: l.lit, deposited: l.deposited })),
     shades: g.shades.map((s) => ({ id: s.id, pos: v3(s.pos), state: s.state })),
     motes_active: g.motes.length,
-    motes: g.motes.map((m) => ({ id: m.id, pos: v3(m.pos) })),
+    motes: g.motes.map((m) => ({ id: m.id, pos: v3(m.pos), kind: m.kind, ttl_s: m.ttl === null ? null : r3(m.ttl / TICK_RATE) })),
+    drifters: g.drifters.map((d) => ({ id: d.id, pos: v3(d.pos), state: d.state, stolen: d.stolen })),
+    charms: g.charms.map((c) => ({ id: c.id, pos: v3(c.pos), available: c.available, respawn_s: r3(c.respawn / TICK_RATE) })),
+    wind: { active: w.active, dir_deg: r3(w.dir_deg) },
   };
 }
+
+export { NIGHTS, angPoint };
+// Temporary alias for the web client until it is updated for 3 nights (Phase 2 step 5).
+export const WORLD = { island_radius: 40 };

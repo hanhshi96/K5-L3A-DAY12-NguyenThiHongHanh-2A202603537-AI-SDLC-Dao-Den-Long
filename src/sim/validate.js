@@ -1,5 +1,6 @@
 // Strict validation of inputs/scenario files. Any problem -> FormatError (exit code 2).
 export class FormatError extends Error {}
+const SHADE_STATES = ['spawning', 'wander', 'chase', 'recoil', 'stunned'];
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -21,7 +22,7 @@ export function validateInputs(doc) {
         `inputs: frame ${i} move must be [x,z] with components in [-1,1]`);
     }
     if ('cam_yaw_deg' in f) need(isNum(f.cam_yaw_deg), `inputs: frame ${i} cam_yaw_deg must be a number`);
-    for (const k of ['jump', 'interact', 'pulse', 'dash']) {
+    for (const k of ['jump', 'interact', 'pulse', 'dash', 'pause']) {
       if (k in f) need(typeof f[k] === 'boolean', `inputs: frame ${i} ${k} must be boolean`);
     }
   });
@@ -36,8 +37,11 @@ export function validateScenario(doc) {
     if ('pos' in p) need(isVec3(p.pos), 'scenario: player.pos must be [x,y,z]');
     if ('carried' in p) need(isInt(p.carried) && p.carried >= 0, 'scenario: player.carried must be int >= 0');
     if ('flames' in p) need(isInt(p.flames) && p.flames >= 0, 'scenario: player.flames must be int >= 0');
+    for (const k of ['invuln_ticks', 'dash_cd_ticks', 'pulse_cd_ticks', 'charm_ticks']) {
+      if (k in p) need(isInt(p[k]) && p[k] >= 0, `scenario: player.${k} must be int >= 0`);
+    }
   }
-  for (const k of ['random_motes', 'random_shades']) {
+  for (const k of ['random_motes', 'random_shades', 'random_drifters', 'wind_enabled']) {
     if (k in doc) need(typeof doc[k] === 'boolean', `scenario: ${k} must be boolean`);
   }
   if ('motes' in doc) {
@@ -53,13 +57,30 @@ export function validateScenario(doc) {
         need(!ids.has(s.id), `scenario: duplicate shade id ${s.id}`);
         ids.add(s.id);
       }
+      if ('state' in s) need(SHADE_STATES.includes(s.state), `scenario: shades[${i}].state must be one of ${SHADE_STATES}`);
+      if ('state_ticks_left' in s) need(isInt(s.state_ticks_left) && s.state_ticks_left >= 0, `scenario: shades[${i}].state_ticks_left must be int >= 0`);
     });
   }
+  for (const k of ['drifters', 'charms']) {
+    if (!(k in doc)) continue;
+    need(Array.isArray(doc[k]), `scenario: ${k} must be an array`);
+    doc[k].forEach((e, i) => {
+      need(isObj(e) && isVec3(e.pos), `scenario: ${k}[${i}].pos must be [x,y,z]`);
+      if ('id' in e) need(typeof e.id === 'string' && e.id.length > 0, `scenario: ${k}[${i}].id must be a string`);
+    });
+  }
+  (doc.drifters || []).forEach((d, i) => {
+    if ('state' in d) need(['idle', 'chase', 'flee', 'removed'].includes(d.state), `scenario: drifters[${i}].state invalid`);
+    if ('stolen' in d) need(isInt(d.stolen) && d.stolen >= 0, `scenario: drifters[${i}].stolen must be int >= 0`);
+  });
+  (doc.charms || []).forEach((c, i) => {
+    if ('available' in c) need(typeof c.available === 'boolean', `scenario: charms[${i}].available must be boolean`);
+  });
   if ('lanterns' in doc) {
     need(Array.isArray(doc.lanterns), 'scenario: lanterns must be an array');
     doc.lanterns.forEach((l, i) => {
       need(isObj(l) && typeof l.id === 'string', `scenario: lanterns[${i}].id must be a string`);
-      need(/^L[1-5]$/.test(l.id), `scenario: unknown lantern id ${l.id}`);
+      need(/^L[1-7]$/.test(l.id), `scenario: unknown lantern id ${l.id}`);
       if ('pos' in l) need(isVec3(l.pos), `scenario: lanterns[${i}].pos must be [x,y,z]`);
       if ('deposited' in l) need(isInt(l.deposited) && l.deposited >= 0, `scenario: lanterns[${i}].deposited must be int >= 0`);
       if ('lit' in l) need(typeof l.lit === 'boolean', `scenario: lanterns[${i}].lit must be boolean`);

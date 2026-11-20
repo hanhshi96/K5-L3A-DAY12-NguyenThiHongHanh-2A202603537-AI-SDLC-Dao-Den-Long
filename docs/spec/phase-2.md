@@ -43,6 +43,8 @@ Lý do sửa test: yêu cầu của khách hàng đã thay đổi. Mỗi test đ
 | G16 | Gió Lạc | Sinh trên các điểm sinh Bóng Mực. "Tối đa 2" chỉ tính con chưa `removed`. Con `removed` vẫn còn trong snapshot. Chỉ cướp khi đang `idle` hoặc `chase` và Mây mang > 0. Chạm chỉ xét khoảng cách XZ. |
 | G17 | Tỏa sáng trúng Gió Lạc | Cùng điều kiện 3D ≤ 5 m. Không tính vào `stunned_ids` và không cộng điểm. |
 | G18 | Điểm khi chạy headless | `score` là điểm của Đêm đang chạy (kể cả khi thua). Trong game có giao diện, tổng điểm là tổng điểm các Đêm đã thắng. |
+| G20 | `night_start` | Ghi một dòng event `tick: 0` trước snapshot tick 0. Đây là sự kiện mở đầu Đêm, không phải sự kiện do dựng scenario sinh ra. |
+| G21 | Gió Lạc bị tỏa sáng khi `idle` | Không có tác dụng (ticket chỉ nói về `chase` và `flee`). |
 | G19 | Tạm dừng | Nhấn `pause` (cạnh lên) để bật/tắt. Bước tạm dừng dừng ngay sau khi đọc input. `--ticks` đếm cả các bước đang tạm dừng. |
 
 ## 3. Tiêu chí nghiệm thu (Phần 3)

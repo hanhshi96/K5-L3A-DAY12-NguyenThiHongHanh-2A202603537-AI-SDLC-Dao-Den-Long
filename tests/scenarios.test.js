@@ -1,3 +1,4 @@
+// P2: pulse_cost is now 3 -> pulse-shade starts with carried 3.
 // Own headless scenarios (also replayed by scripts/proof.sh into docs/proof/).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -7,14 +8,15 @@ import { runHeadless, ROOT, T } from './helpers.js';
 
 const load = (n) => JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/scenarios', n), 'utf8'));
 
-test('scenario light-L1: walk, pick 5 motes, deposit, light L1', () => {
-  const r = runHeadless({ ticks: 120, scenario: load('light-L1.scenario.json'), inputs: load('light-L1.inputs.json') });
+// P2: lantern_cost is now 10 -> scenario has 10 motes; score is given on deposit.
+test('scenario light-L1: walk, pick 10 motes, deposit, light L1', () => {
+  const r = runHeadless({ ticks: 180, scenario: load('light-L1.scenario.json'), inputs: load('light-L1.inputs.json') });
   const names = r.events.map((e) => e.name);
-  assert.equal(names.filter((n) => n === 'mote_picked').length, 5);
+  assert.equal(names.filter((n) => n === 'mote_picked').length, 10);
   assert.deepEqual(names.slice(-2), ['deposit', 'lantern_lit']);
-  assert.equal(r.events.at(-1).tick, 76);
-  assert.equal(r.end.score, 5 * T.score.per_mote + T.score.per_lantern);
-  assert.equal(r.snapAt(120).lanterns[0].lit, true);
+  assert.equal(r.events.at(-1).tick, 121);
+  assert.equal(r.end.score, 10 * T.score.per_mote + T.score.per_lantern);
+  assert.equal(r.snapAt(130).lanterns[0].lit, true);
 });
 
 test('scenario pulse-shade: shade stunned before it reaches the player', () => {

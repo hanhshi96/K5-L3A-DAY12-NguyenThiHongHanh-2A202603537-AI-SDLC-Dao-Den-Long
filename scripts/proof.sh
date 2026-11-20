@@ -7,7 +7,7 @@ P="${1:-phase-1}"; OUT="docs/proof/$P"; mkdir -p "$OUT"
 npm test --silent 2>&1 | tee "$OUT/test-output.txt"
 for s in light-L1 pulse-shade; do
   node src/headless.js --seed 1 --night 1 --scenario tests/scenarios/$s.scenario.json \
-    --inputs tests/scenarios/$s.inputs.json --ticks 120 --out "$OUT/$s.jsonl"
+    --inputs tests/scenarios/$s.inputs.json --ticks 180 --out "$OUT/$s.jsonl"
 done
 node src/headless.js --seed 2026 --night 1 --ticks 18000 --out "$OUT/idle-seed2026.jsonl"
 node src/headless.js --seed 2026 --night 1 --ticks 18000 --out "$OUT/idle-seed2026.run2.jsonl"
