@@ -232,6 +232,43 @@ const moteArrow = (() => {
 })();
 scene.add(moteArrow);
 const fx = [];
+// Pulse effect (visual only, Phase 4 creative): light bursts out of Mây's own lantern instead of a plain ring.
+// The rule in sim.js stuns shades in a sphere of T.pulse_radius around Mây, in every direction, so the effect
+// radiates evenly: a glowing sphere, 12 light rays and a ground ring that all end exactly at T.pulse_radius.
+const pulseMats = {
+  glow: new THREE.MeshBasicMaterial({ color: PALETTE.lanternCore, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+  ray: new THREE.MeshBasicMaterial({ color: PALETTE.lanternLit, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+  ring: new THREE.MeshBasicMaterial({ color: PALETTE.lanternCore, transparent: true, side: THREE.DoubleSide, depthWrite: false }),
+};
+function spawnPulseFx() {
+  const R = T.pulse_radius, dur = 0.6;
+  const lamp = player.userData.lamp.getWorldPosition(new THREE.Vector3());
+  const g = new THREE.Group();
+  const mats = Object.fromEntries(Object.entries(pulseMats).map(([k, m]) => [k, m.clone()]));
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), mats.glow);
+  glow.position.copy(lamp);
+  const rays = new THREE.Group(); rays.position.copy(lamp);
+  const rayGeo = new THREE.ConeGeometry(0.12, 1, 6); rayGeo.translate(0, 0.5, 0); rayGeo.rotateX(Math.PI / 2); // base at origin, tip at +Z
+  for (let i = 0; i < 12; i++) {
+    const r = new THREE.Mesh(rayGeo, mats.ray); r.rotation.y = (i / 12) * Math.PI * 2; rays.add(r);
+  }
+  const ring = new THREE.Mesh(new THREE.RingGeometry(R - 0.25, R, 64), mats.ring);
+  ring.rotation.x = -Math.PI / 2; ring.position.set(game.player.pos[0], game.player.pos[1] + 0.1, game.player.pos[2]);
+  g.add(glow, rays, ring);
+  g.userData = {
+    life: dur, dur,
+    update(k) {
+      const ease = 1 - (1 - k) * (1 - k); // fast out, slow in
+      glow.scale.setScalar(0.3 + ease * (R - 0.3)); mats.glow.opacity = 0.55 * (1 - k);
+      rays.children.forEach(r => r.scale.set(1, 1, 0.5 + ease * (R - 0.5))); mats.ray.opacity = 0.9 * (1 - k);
+      if (!settings.reducedMotion) rays.rotation.y = k * 0.6;
+      mats.ring.opacity = 0.8 * (1 - k * k);
+      player.userData.light.intensity += 6 * (1 - k); // lantern flares up, sync() resets it each frame
+    },
+  };
+  g.userData.update(0);
+  scene.add(g); fx.push(g);
+}
 let prevInput = {}, lastCountdown = -1, wasGrounded = true;
 
 function startNight(n, opts = {}) {
@@ -614,11 +651,7 @@ function frame(now) {
         if (ev.name === 'player_hit' && !settings.reducedMotion) cue.shakeUntil = performance.now() + 300;
         if ((ev.name === 'lantern_lit' || ev.name === 'pulse') && !settings.reducedMotion) flash();
         if (SFX[ev.name]) SFX[ev.name](ev);
-        if (ev.name === 'pulse') {
-          const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48), new THREE.MeshBasicMaterial({ color: PALETTE.lanternCore, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
-          ring.rotation.x = -Math.PI / 2; ring.position.set(game.player.pos[0], game.player.pos[1] + 0.2, game.player.pos[2]); ring.userData.life = 0.4;
-          scene.add(ring); fx.push(ring);
-        }
+        if (ev.name === 'pulse') spawnPulseFx();
         if (ev.name === 'game_over') onGameOver(ev.data);
       }
     }
@@ -629,10 +662,10 @@ function frame(now) {
     sync(t); hud(t);
     $('hud').style.display = ui === 'menu' || ui === 'dawn' ? 'none' : 'block';
     for (let i = fx.length - 1; i >= 0; i--) {
-      const r = fx[i]; r.userData.life -= dt;
-      const s = 1 + (1 - r.userData.life / 0.4) * (T.pulse_radius - 1);
-      r.scale.set(s, s, s); r.material.opacity = Math.max(0, r.userData.life / 0.4);
-      if (r.userData.life <= 0) { scene.remove(r); fx.splice(i, 1); }
+      const f = fx[i]; f.userData.life -= dt;
+      const k = Math.min(1, 1 - f.userData.life / f.userData.dur); // 0 → 1 over the effect's lifetime
+      f.userData.update(k);
+      if (f.userData.life <= 0) { scene.remove(f); f.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); fx.splice(i, 1); }
     }
     if (ui === 'bench') benchCamera(now);
     else {
