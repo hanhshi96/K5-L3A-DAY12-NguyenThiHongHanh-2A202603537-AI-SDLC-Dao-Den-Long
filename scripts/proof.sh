@@ -13,6 +13,12 @@ node src/headless.js --seed 2026 --night 1 --ticks 18000 --out "$OUT/idle-seed20
 node src/headless.js --seed 2026 --night 1 --ticks 18000 --out "$OUT/idle-seed2026.run2.jsonl"
 cmp "$OUT/idle-seed2026.jsonl" "$OUT/idle-seed2026.run2.jsonl" && echo "determinism: identical" | tee "$OUT/determinism.txt"
 rm "$OUT/idle-seed2026.run2.jsonl"
-/usr/bin/time -p node src/headless.js --seed 1 --night 1 --ticks 18000 --scenario tests/scenarios/pulse-shade.scenario.json \
-  --out /dev/null 2> "$OUT/timing.txt" || true
+echo '{"player":{"flames":999}}' > /tmp/ddl-long.json
+: > "$OUT/timing.txt"
+for n in 1 2 3; do
+  s=$(node -e 'console.log(Date.now())')
+  node src/headless.js --seed 1 --night $n --ticks 21600 --scenario /tmp/ddl-long.json --out /tmp/ddl-long.jsonl
+  e=$(node -e 'console.log(Date.now())')
+  echo "night $n full length: $((e - s)) ms ($(tail -1 /tmp/ddl-long.jsonl))" | tee -a "$OUT/timing.txt"
+done
 echo "proof written to $OUT"

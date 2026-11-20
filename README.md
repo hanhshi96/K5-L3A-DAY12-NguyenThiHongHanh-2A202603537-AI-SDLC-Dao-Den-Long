@@ -12,16 +12,16 @@ Yêu cầu Node.js ≥ 18 và trình duyệt có WebGL. Máy cần có mạng, v
 ```bash
 npm install        # không có dependency ngoài, chỉ kiểm tra môi trường
 npm start          # mở http://localhost:5173
-npm test           # 22 test: Test Contract + scenario riêng
+npm test           # 48 test: Test Contract v1.1 + tính năng Phase 2 + scenario riêng
 ```
 
 Chạy headless theo Test Contract v1.0:
 
 ```bash
-node src/headless.js --seed 1 --night 1 --ticks 600 --out out.jsonl [--scenario s.json] [--inputs i.json] [--snapshot-every 10]
+node src/headless.js --seed 1 --night 1|2|3 --ticks 600 --out out.jsonl [--scenario s.json] [--inputs i.json] [--snapshot-every 10]
 ```
 
-Lệnh `scripts/proof.sh phase-1` sinh lại toàn bộ bằng chứng vào [docs/proof/phase-1/](docs/proof/phase-1/).
+Lệnh `scripts/proof.sh phase-2` sinh lại toàn bộ bằng chứng vào [docs/proof/phase-2/](docs/proof/phase-2/).
 
 ## Điều khiển
 
@@ -29,33 +29,36 @@ Lệnh `scripts/proof.sh phase-1` sinh lại toàn bộ bằng chứng vào [doc
 |---|---|
 | `W A S D` / phím mũi tên | Di chuyển theo hướng camera |
 | `Space` | Nhảy |
-| Kéo chuột, hoặc `Q` / `C` | Xoay camera |
-| `E` | Nạp đom đóm vào đèn gần nhất (trong 2.5 m) |
-| `F` / `Shift` trái | Tỏa sáng: tốn 2 đom đóm, làm choáng và đẩy lùi Bóng Mực trong bán kính 6 m |
-| `Enter` / `R` | Bắt đầu / chơi lại sau khi thắng hoặc thua |
+| `Shift` | Lướt (14 m/s trong 0.2 s, hồi chiêu 1.5 s) |
+| Kéo chuột, hoặc `Q` / `C` | Xoay camera (độ nhạy chỉnh trong Cài đặt) |
+| `E` | Nạp đom đóm vào đèn gần nhất (trong 2 m) |
+| `F` | Tỏa sáng: tốn 3 đom đóm, làm choáng Bóng Mực trong 5 m |
+| `Esc` / `P` | Tạm dừng: Tiếp tục / Chơi lại Đêm / Cài đặt / Về menu |
+| `Enter` | Bắt đầu, sang Đêm kế tiếp, chơi lại khi thua |
 
-## Luật chơi và cách tính điểm
+## Luật chơi và cách tính điểm (số liệu chuẩn Ticket-02)
 
-- Đi qua đom đóm là tự nhặt (bán kính 1.2 m), mang tối đa 10 con.
-- Mỗi đèn cần **5 đom đóm**. Có thể nạp nhiều lần. Đèn sáng khi đã nạp đủ.
-- Bóng Mực đuổi theo khi Mây ở trong 15 m, ngoài khoảng đó thì lang thang. Bị chạm thì Mây mất 1 lửa (có 3 lửa), rơi 50% số đom đóm đang mang (làm tròn xuống, đom đóm rơi sẽ mất) và được bất tử 1.5 giây.
-- Bóng Mực **không vào được vùng 5 m quanh đèn đã thắp** (đèn chưa thắp thì không có tác dụng này).
-- Thắng khi thắp đủ 5 đèn. Thua khi hết lửa hoặc hết 300 giây (bình minh).
+Ba Đêm nối tiếp nhau: **Đảo Bến** (5 đèn, 300 s), **Đảo Cau** (2 đảo, cầu tre, bục nhảy, 6 đèn, 330 s), **Đảo Chuông** (3 tầng, gió mạnh, 7 đèn, 360 s). Mỗi Đêm Mây có lại đủ 3 lửa.
+
+- Nhặt đom đóm khi cách ≤ 1 m; mang tối đa 10. Mỗi đèn cần 10 đom đóm.
+- Bóng Mực bị chạm thì Mây mất 1 lửa, rơi một nửa số đom đóm đang mang ra xung quanh (nhặt lại được trong 8 s), được bất tử 1.5 s. Đèn đã thắp tạo vùng an toàn 6 m.
+- Rơi khỏi đảo: mất 1 lửa và toàn bộ đom đóm, hồi sinh ở điểm xuất phát.
+- **Gió Lạc** (Đêm 2–3) cướp 3 đom đóm khi Mây mang ≥ 5; tỏa sáng trúng thì nó bỏ chạy hoặc đánh rơi đồ đã cướp.
+- **Bùa Gió**: 10 s chạy 7.2 m/s và lướt không hồi chiêu.
 
 | Sự kiện | Điểm |
 |---|---|
-| Nhặt 1 đom đóm | +10 |
+| Mỗi đom đóm **nạp vào đèn** | +10 |
 | Thắp 1 đèn | +100 |
-| Mỗi Bóng Mực bị choáng bởi một lần tỏa sáng | +25 |
-| Khi thắng: mỗi giây còn lại (làm tròn xuống) | +2 |
-| Khi thắng: mỗi lửa còn lại | +50 |
+| Mỗi Bóng Mực trúng tỏa sáng | +5 |
+| Khi thắng Đêm: mỗi giây còn lại / mỗi lửa còn lại | +2 / +50 |
 
-Thua thì không có điểm thưởng cuối màn.
+Tổng điểm là tổng điểm các Đêm đã thắng. Chi tiết luật và giả định: [docs/spec/phase-2.md](docs/spec/phase-2.md).
 
 ## Test Contract
 
 - Tệp [game.contract.json](game.contract.json) được sinh từ `TUNING` trong [src/sim/sim.js](src/sim/sim.js). Test `tuning mirrors…` kiểm tra hai bên giống hệt nhau.
-- `fall_enabled: false`: mép đảo là tường chắn, không thể rơi xuống, nên không bao giờ có sự kiện `player_hit` với `by: "fall"`.
+- `fall_enabled: true` (Phase 2): rơi khỏi đảo (Y < −10) phát `player_hit` với `by: "fall"` và trường `lost`.
 - Logic game nằm trong một module JS thuần ([src/sim/sim.js](src/sim/sim.js)), dùng chung cho bản 3D ([src/web/main.js](src/web/main.js)) và headless ([src/headless.js](src/headless.js)). Vì vậy hai bản không thể lệch luật nhau.
 - Ngẫu nhiên dùng PRNG mulberry32 theo `--seed`, nên output tất định.
 - Mã thoát: `0` khi thành công; `2` khi file inputs/scenario sai định dạng; `1` khi sai tham số dòng lệnh.
