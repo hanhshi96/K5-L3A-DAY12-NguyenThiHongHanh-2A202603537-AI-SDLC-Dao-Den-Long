@@ -4,11 +4,13 @@ Hướng dẫn cho mọi agent AI làm việc trên repo này. Đọc hết trư
 
 ## Lệnh
 - Test: `npm test` (node:test, không cần dependency). Phải xanh trước khi kết thúc. Stop hook trong `.claude/settings.json` sẽ chặn nếu test còn đỏ.
-- Headless: `node src/headless.js --seed 1 --night 1|2|3 --ticks 600 --out out.jsonl` (Contract v1.1)
+- Headless: `node src/headless.js --seed 1 --night 1|2|3 --ticks 600 --out out.jsonl` (Contract v1.2)
 - Chạy game: `npm start`, rồi mở http://localhost:5173 (thêm `?night=2&autostart` để vào thẳng một Đêm)
 - Sinh bằng chứng: `scripts/proof.sh phase-N`, kết quả ghi vào `docs/proof/phase-N/`
 
 ## Kiến trúc (bất biến)
+- Quyết định thiết kế nằm ở `docs/adr/`, thay đổi phá vỡ tương thích ở `CHANGELOG.md`; luật bị ticket thay thì sửa test kèm ghi chú `// P<n>:`, không skip.
+- Dầu đèn là **số nguyên** đơn vị 1/60 (`fuelU`); chỉ làm tròn khi ghi snapshot.
 - Bản đồ chuẩn của 3 Đêm nằm trong `src/sim/nights.js`; spec và giả định nằm trong `docs/spec/phase-N.md`.
 - **Mọi luật chơi nằm trong `src/sim/sim.js`**: JS thuần, không DOM, không `Math.random`, không `Date`. Ngẫu nhiên chỉ dùng `g.rng` (seed).
 - `src/web/` chỉ hiển thị, âm thanh và đọc input. Không được đặt luật chơi ở đây.
@@ -28,6 +30,7 @@ Hướng dẫn cho mọi agent AI làm việc trên repo này. Đọc hết trư
 - Commit nhỏ, thông điệp rõ ràng.
 
 ## Bài học (cập nhật khi agent sai)
+- Khi tính giá trị kỳ vọng trong test, phải đi lại đủ 12 bước của tick: bước 2 (hao dầu, hút dầu, giảm bộ đếm) luôn chạy trước hành động của người chơi.
 - Mọi bộ đếm (hồi chiêu, choáng, TTL, flee…) giảm ở bước 2; đặt giá trị ở bước sau thì giữ đúng N tick. Lệch 1 tick là lỗi hay gặp nhất.
 - Test đỏ: đọc output headless thật trước, xác định game sai hay test sai, rồi mới sửa. Không nới lỏng assert cho tới khi pass.
 - So sánh vị trí trong snapshot phải tính tới làm tròn 3 chữ số; dùng sai số cho phép với số thực.
