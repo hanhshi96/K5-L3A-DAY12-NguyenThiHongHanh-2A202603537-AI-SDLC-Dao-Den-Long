@@ -135,11 +135,22 @@ function makeLantern() {
   g.userData = { body, core, light, ring, bar, barBg, tear };
   return g;
 }
-const moteGeo = new THREE.SphereGeometry(0.15, 8, 6);
-const haloGeo = new THREE.SphereGeometry(0.3, 8, 6);
-const moteMat = mat(PALETTE.moteCore, PALETTE.moteCore, 3);
-const haloMat = new THREE.MeshBasicMaterial({ color: PALETTE.moteHalo, transparent: true, opacity: 0.35 });
-function makeMote() { const g = new THREE.Group(); g.add(new THREE.Mesh(moteGeo, moteMat), new THREE.Mesh(haloGeo, haloMat)); return g; }
+// Motes (visual only, Phase 4 creative): bigger core, glowing additive halo, and a faint light column so they are
+// easy to spot from far away. Sizes are display-only; pickup radius still comes from TUNING in sim.js.
+const moteGeo = new THREE.SphereGeometry(0.28, 12, 8);
+const haloGeo = new THREE.SphereGeometry(0.65, 12, 8);
+const beamGeo = new THREE.CylinderGeometry(0.06, 0.25, 6, 8, 1, true);
+const moteMat = mat(PALETTE.moteCore, PALETTE.moteCore, 4);
+const haloMat = new THREE.MeshBasicMaterial({ color: PALETTE.moteHalo, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false });
+const beamMat = new THREE.MeshBasicMaterial({ color: PALETTE.moteHalo, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false });
+function makeMote() {
+  const g = new THREE.Group();
+  const halo = new THREE.Mesh(haloGeo, haloMat), beam = new THREE.Mesh(beamGeo, beamMat);
+  beam.position.y = 3;
+  g.add(new THREE.Mesh(moteGeo, moteMat), halo, beam);
+  g.userData = { halo };
+  return g;
+}
 function makeShade() {
   const g = new THREE.Group();
   const blob = new THREE.Mesh(new THREE.SphereGeometry(0.75, 16, 12), mat(PALETTE.shadeBody, PALETTE.shadeRim, 0.5));
@@ -208,6 +219,18 @@ let runSeed = Date.now() & 0x7fffffff, nightsWon = 0, saved = false; // one run 
 const meshes = { lantern: new Map(), mote: new Map(), shade: new Map(), drifter: new Map(), charm: new Map() };
 const player = makePlayer();
 scene.add(player);
+// Guide arrow (visual only, Phase 4 creative): a glowing arrow floating above Mây that points at the nearest mote.
+const moteArrow = (() => {
+  const g = new THREE.Group();
+  const m = new THREE.MeshBasicMaterial({ color: PALETTE.moteHalo, transparent: true, opacity: 0.85, depthTest: false });
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.8, 12), m);
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.7, 8), m);
+  head.rotation.x = tail.rotation.x = Math.PI / 2; // point along +Z, then turn the group with rotation.y
+  head.position.z = 0.75; tail.position.z = 0.1;
+  g.add(head, tail); g.renderOrder = 10; g.visible = false;
+  return g;
+})();
+scene.add(moteArrow);
 const fx = [];
 let prevInput = {}, lastCountdown = -1, wasGrounded = true;
 
@@ -395,7 +418,20 @@ function sync(t) {
     const ph = parseInt(e.id.slice(1), 10);
     m.position.set(e.pos[0], e.pos[1] + 0.9 + Math.sin(t * 3 + ph) * 0.2, e.pos[2]);
     m.scale.setScalar(e.kind === 'dropped' ? 0.8 + Math.sin(t * 10) * 0.1 : 1);
+    if (!settings.reducedMotion) m.userData.halo.scale.setScalar(1 + Math.sin(t * 4 + ph) * 0.15); // soft "breathing" glow
   });
+  // Point the guide arrow at the nearest mote on the XZ plane; hide it when none is left or one is right here.
+  let near = null, best = Infinity;
+  for (const e of game.motes) {
+    const d = Math.hypot(e.pos[0] - p.pos[0], e.pos[2] - p.pos[2]);
+    if (d < best) { best = d; near = e; }
+  }
+  moteArrow.visible = !!near && best > 2.5 && ui !== 'bench';
+  if (moteArrow.visible) {
+    const bob = settings.reducedMotion ? 0 : Math.sin(t * 5) * 0.12;
+    moteArrow.position.set(p.pos[0], p.pos[1] + 3 + bob, p.pos[2]);
+    moteArrow.rotation.y = Math.atan2(near.pos[0] - p.pos[0], near.pos[2] - p.pos[2]);
+  }
   syncList('shade', game.shades, makeShade, (m, s) => {
     m.position.set(s.pos[0], s.pos[1] + Math.sin(t * 4 + s.pos[0]) * 0.1, s.pos[2]);
     m.lookAt(p.pos[0], s.pos[1], p.pos[2]);
