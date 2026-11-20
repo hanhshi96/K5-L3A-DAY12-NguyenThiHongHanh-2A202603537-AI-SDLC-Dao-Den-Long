@@ -27,9 +27,9 @@ const INTRO = {
 // ---------- settings (persisted) ----------
 // Remappable actions (Ticket-04 §4). Arrow keys always move too; Escape always pauses.
 export const ACTIONS = [['up', 'Đi lên'], ['down', 'Đi xuống'], ['left', 'Sang trái'], ['right', 'Sang phải'],
-  ['jump', 'Nhảy'], ['dash', 'Lướt'], ['interact', 'Nạp / châm đèn'], ['pulse', 'Tỏa sáng'], ['pause', 'Tạm dừng']];
-const DEFAULT_KEYS = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', dash: 'ShiftLeft', interact: 'KeyE', pulse: 'KeyF', pause: 'KeyP' };
-const settings = { volume: 0.6, sensitivity: 1, colorblind: false, reducedMotion: false, largeText: false, keys: { ...DEFAULT_KEYS } };
+  ['jump', 'Nhảy'], ['dash', 'Lướt'], ['interact', 'Nạp / châm đèn'], ['pulse', 'Tỏa sáng'], ['pause', 'Tạm dừng'], ['view', 'Đổi góc nhìn']];
+const DEFAULT_KEYS = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', dash: 'ShiftLeft', interact: 'KeyE', pulse: 'KeyF', pause: 'KeyP', view: 'KeyV' };
+const settings = { volume: 0.6, sensitivity: 1, colorblind: false, reducedMotion: false, largeText: false, topDown: false, keys: { ...DEFAULT_KEYS } };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('ddl-settings') || '{}')); } catch { /* private mode */ }
 settings.keys = { ...DEFAULT_KEYS, ...(settings.keys || {}) };
 const keyName = (c) => ({ Space: 'Space', ShiftLeft: 'Shift trái', ShiftRight: 'Shift phải', Escape: 'Esc', Enter: 'Enter',
@@ -308,7 +308,7 @@ function onGameOver({ result }) {
 function controlsHelp() {
   const k = (a) => `<kbd>${keyName(settings.keys[a])}</kbd>`;
   return `${k('up')}${k('left')}${k('down')}${k('right')} đi · ${k('jump')} nhảy · ${k('dash')} lướt · ${k('interact')} nạp/châm đèn · ${k('pulse')} tỏa sáng<br>
-    kéo chuột / <kbd>Q</kbd> <kbd>C</kbd> xoay camera · <kbd>Esc</kbd>/${k('pause')} tạm dừng · đổi phím trong Cài đặt`;
+    kéo chuột / <kbd>Q</kbd> <kbd>C</kbd> xoay camera · ${k('view')} nhìn từ trên xuống · <kbd>Esc</kbd>/${k('pause')} tạm dừng · đổi phím trong Cài đặt`;
 }
 function showMenu() {
   stopMusic(); ui = 'menu'; totalScore = 0;
@@ -420,6 +420,7 @@ addEventListener('keydown', (e) => {
     else if (ui === 'dawn') { document.body.style.background = ''; showMenu(); }
   }
   if (e.code === 'KeyR' && ui === 'lost') startNight(nightNo);
+  if (e.code === settings.keys.view && !e.repeat && ui === 'play') { settings.topDown = !settings.topDown; saveSettings(); } // camera only
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 let dragging = false;
@@ -670,8 +671,15 @@ function frame(now) {
     if (ui === 'bench') benchCamera(now);
     else {
       const p = player.position, fxv = Math.sin(yaw), fzv = Math.cos(yaw);
-      camera.position.lerp(new THREE.Vector3(p.x - fxv * 9, p.y + 6, p.z - fzv * 9), 0.15);
-      camera.lookAt(p.x + fxv * 2, p.y + 1.2, p.z + fzv * 2);
+      // Top-down view (visual only, Phase 4 creative): high above Mây, tilted slightly so "forward" (yaw) stays
+      // at the top of the screen and WASD keeps the same meaning in both views. Movement is never changed here.
+      if (settings.topDown) {
+        camera.position.lerp(new THREE.Vector3(p.x - fxv * 4, p.y + 18, p.z - fzv * 4), 0.12);
+        camera.lookAt(p.x + fxv * 1.5, p.y, p.z + fzv * 1.5);
+      } else {
+        camera.position.lerp(new THREE.Vector3(p.x - fxv * 9, p.y + 6, p.z - fzv * 9), 0.15);
+        camera.lookAt(p.x + fxv * 2, p.y + 1.2, p.z + fzv * 2);
+      }
       if (now < cue.shakeUntil && !settings.reducedMotion) camera.position.add(new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, 0));
     }
   }
