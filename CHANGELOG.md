@@ -6,6 +6,7 @@
 - Soak test `node --expose-gc --jitless src/soak.js --seed 7 --nights 10 --out soak.json`.
 - Bảng xếp hạng top 10 lưu trên đĩa (`data/leaderboard.json`), có màn hình riêng; lệnh `node server.js --export-leaderboard out.json`.
 - Dễ tiếp cận: đổi phím (phát hiện trùng phím, khôi phục mặc định), phụ đề và cảnh báo bằng hình, giảm chuyển động, chữ ≥ 18 px, chữ lớn ×1.25.
+- Phần sáng tạo (chỉ hiển thị, không đổi output headless): nhân vật Mây chibi mới (`src/web/may.js`), trang trí đảo (`src/web/decor.js`), đom đóm có quầng và cột sáng, mũi tên chỉ đom đóm gần nhất, hiệu ứng Tỏa sáng từ đèn lồng, góc nhìn từ trên xuống (phím `V`, hành động mới "Đổi góc nhìn" trong Cài đặt).
 - Bản phát hành `dao-den-long-v1.0.0.zip` (chạy bằng `node server.js`, không cần `npm install`).
 ### Thay đổi
 - `contract_version` "1.2" → "1.3"; thêm `bench_cmd`, `soak_cmd`. `run_cmd` đổi từ `npm start` thành `node server.js` (để nhận tham số `--export-leaderboard`).
