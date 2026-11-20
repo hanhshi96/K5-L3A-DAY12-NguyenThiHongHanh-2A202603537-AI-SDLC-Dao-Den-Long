@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đảo Đèn Lồng</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #120a1f; font-family: system-ui, sans-serif; color: #ffe9c4; }
+  canvas { display: block; }
+  #hud { position: fixed; top: 12px; left: 12px; font-size: 16px; line-height: 1.6; background: rgba(20,10,35,.6);
+         padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,190,110,.3); min-width: 210px; }
+  #hud b { color: #ffb347; }
+  #hint { position: fixed; bottom: 40px; width: 100%; text-align: center; font-size: 18px; text-shadow: 0 0 8px #000; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+             background: rgba(10,5,20,.75); text-align: center; }
+  #overlay .box { max-width: 520px; padding: 28px 32px; border-radius: 16px; background: rgba(40,20,60,.9);
+                  border: 1px solid rgba(255,190,110,.4); }
+  #overlay h1 { margin: 0 0 8px; color: #ffb347; }
+  #overlay kbd { background: #ffe9c4; color: #2a1640; border-radius: 4px; padding: 1px 6px; font-weight: 600; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="hint"></div>
+<div id="overlay"><div class="box" id="overlayBox"></div></div>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
