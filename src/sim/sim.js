@@ -229,6 +229,7 @@ export function step(g, input) {
   g.timeLeftTicks--;
   for (const k of ['pulseCd', 'dashCd', 'invuln', 'charm', 'dashTicks']) if (p[k] > 0) p[k]--;
   for (const s of g.shades) if (s.state === 'stunned' && s.stateTicks > 0) s.stateTicks--;
+  for (const d of g.drifters) if (d.state === 'flee' && d.timer > 0) d.timer--;
   for (let i = g.motes.length - 1; i >= 0; i--) {
     const m = g.motes[i];
     if (m.ttl !== null && --m.ttl <= 0) g.motes.splice(i, 1);
@@ -286,7 +287,7 @@ export function step(g, input) {
         }
       }
     }
-    p.vel = [vx, p.grounded ? 0 : p.vy, vz];
+    p.vel = p.launch && p.dashTicks === 0 ? [p.launch[0], p.vy, p.launch[1]] : [vx, p.grounded ? 0 : p.vy, vz];
     if (T.fall_enabled && p.pos[1] < R.fall_y) {
       p.flames--;
       const lost = p.carried;
@@ -423,7 +424,7 @@ export function step(g, input) {
       moveToward(d, d.target[0], d.target[2], R.drifter_idle_speed);
     } else if (d.state === 'flee') {
       moveAway(d, p.pos, R.drifter_speed);
-      if (--d.timer <= 0) d.state = 'removed';
+      if (d.timer <= 0) d.state = 'removed'; // timer is decremented in step 2
     }
     d.pos[1] = shadeY(g, d.pos[0], d.pos[2], R.drifter_hover);
   }
