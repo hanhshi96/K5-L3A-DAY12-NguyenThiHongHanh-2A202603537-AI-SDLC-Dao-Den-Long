@@ -1,9 +1,9 @@
 # Đảo Đèn Lồng · v1.0.0
 
-> **Video demo:** [docs/demo/demo.mp4](docs/demo/demo.mp4) (cũng đính kèm trong GitHub Release `v1.0.0`)
+> **Video demo:** [demo.mp4](https://github.com/hanhshi96/K5-L3A-DAY12-NguyenThiHongHanh-2A202603537-AI-SDLC-Dao-Den-Long/releases/download/v1.0.0/demo.mp4) (đính kèm trong [GitHub Release `v1.0.0`](https://github.com/hanhshi96/K5-L3A-DAY12-NguyenThiHongHanh-2A202603537-AI-SDLC-Dao-Den-Long/releases/tag/v1.0.0), 4 phút 55 giây)
 > Day 12 · AI SDLC Lab · 2A202603537 · Nguyễn Thị Hồng Hạnh · Tài liệu lab gốc: [docs/lab/](docs/lab/)
 
-Game 3D góc nhìn thứ ba (Three.js, chạy trên trình duyệt). Người chơi điều khiển Mây, người giữ đèn đội nón lá có treo đèn lồng nhỏ, đi qua ba hòn đảo trong một đêm. Mây gom đom đóm để thắp và châm dầu cho các Đèn Lồng Lớn, xua Bóng Mực, tránh Gió Lạc, và **giữ đảo sáng tới bình minh**.
+Game 3D góc nhìn thứ ba (Three.js, chạy trên trình duyệt). Người chơi điều khiển Mây, cô bé giữ đèn quàng khăn đỏ hoa trắng, tay cầm đèn lồng, đi qua ba hòn đảo trong một đêm. Mây gom đom đóm để thắp và châm dầu cho các Đèn Lồng Lớn, xua Bóng Mực, tránh Gió Lạc, và **giữ đảo sáng tới bình minh**.
 
 | Đêm 2: Đảo Cau | Đêm 3: Đảo Chuông | Bảng xếp hạng |
 |---|---|---|
